@@ -7,3 +7,4 @@ This project implements basic server client communication using datagram sockets
 ## Contents
 
    -  Assignment [details](ASSIGNMENT.md)
+   -  Github Actions: [Unnecessary CI/CD for university students](https://mbund.dev/posts/cicd-for-university/#electric-boogaloo)
