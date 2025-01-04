@@ -1,5 +1,21 @@
 {
   "nodes": {
+    "harper": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1735941143,
+        "narHash": "sha256-8kRLDTypxjOGL6BU7HN4OJf00NpOwv47Rc8dv7/YYFs=",
+        "owner": "grantlemons",
+        "repo": "harper",
+        "rev": "7bdc753b54cec79702807fb81a8defafc4a3f1be",
+        "type": "github"
+      },
+      "original": {
+        "owner": "grantlemons",
+        "repo": "harper",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1735915915,
@@ -18,6 +34,7 @@
     },
     "root": {
       "inputs": {
+        "harper": "harper",
         "nixpkgs": "nixpkgs"
       }
     }
