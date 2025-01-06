@@ -1,41 +1,81 @@
-//! By convention, main.zig is where your main function lives in the case that
-//! you are building an executable. If you are making a library, the convention
-//! is to delete this file and start with root.zig instead.
-
-pub fn main() !void {
-    // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
-
-    // stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
-
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
-
-    try bw.flush(); // Don't forget to flush!
-}
-
-test "simple test" {
-    var list = std.ArrayList(i32).init(std.testing.allocator);
-    defer list.deinit(); // Try commenting this out and see if zig detects the memory leak!
-    try list.append(42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
-}
-
-test "fuzz example" {
-    const global = struct {
-        fn testOne(input: []const u8) anyerror!void {
-            // Try passing `--fuzz` to `zig build test` and see if it manages to fail this test case!
-            try std.testing.expect(!std.mem.eql(u8, "canyoufindme", input));
-        }
-    };
-    try std.testing.fuzz(global.testOne, .{});
-}
-
 const std = @import("std");
 
-/// This imports the separate module containing `root.zig`. Take a look in `build.zig` for details.
-const lib = @import("zig_lib");
+const UDPSocket = struct {
+    const Self = @This();
+    socketfd: std.posix.socket_t,
+    addr: std.net.Address,
+
+    recvbuf: [65535]u8,
+
+    pub fn init(addr: std.net.Address) !Self {
+        return Self{
+            .socketfd = try std.posix.socket(
+                addr.any.family,
+                std.posix.SOCK.DGRAM,
+                std.posix.IPPROTO.UDP,
+            ),
+            .addr = addr,
+            .recvbuf = undefined,
+        };
+    }
+
+    pub fn deinit(self: Self) void {
+        std.posix.close(self.socketfd);
+    }
+
+    pub fn bind(self: Self) !void {
+        try std.posix.setsockopt(
+            self.socketfd,
+            std.posix.SOL.SOCKET,
+            std.posix.SO.REUSEADDR,
+            &std.mem.toBytes(@as(c_int, 1)),
+        );
+        try std.posix.bind(
+            self.socketfd,
+            &self.addr.any,
+            self.addr.getOsSockLen(),
+        );
+        std.debug.print("[+] socket bound\n", .{});
+    }
+
+    pub fn listen(self: *Self) !void {
+        std.debug.print("[+] listening on port {}\n", .{self.addr.getPort()});
+        while (true) {
+            var client_addr: std.net.Address = undefined;
+            var client_addr_len: std.posix.socklen_t = self.addr.getOsSockLen();
+
+            const bytes_recved = try std.posix.recvfrom(
+                self.socketfd,
+                &self.recvbuf,
+                0,
+                &client_addr.any,
+                &client_addr_len,
+            );
+
+            if (bytes_recved > 0) {
+                std.debug.print("[+] recv {} bytes from {} - '{s}'\n", .{ bytes_recved, client_addr, self.recvbuf[0..bytes_recved] });
+            }
+
+            const send_msg = "Welcome to CSE5462.";
+
+            _ = try std.posix.sendto(
+                self.socketfd,
+                send_msg,
+                0,
+                &client_addr.any,
+                client_addr_len,
+            );
+
+            std.debug.print("[+] {} connected\n", .{client_addr});
+        }
+    }
+};
+
+pub fn main() !void {
+    var socket = try UDPSocket.init(try std.net.Address.resolveIp("127.0.0.1", 8001));
+    defer socket.deinit();
+
+    try socket.bind();
+
+    try socket.listen();
+}
