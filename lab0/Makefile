@@ -1,28 +1,17 @@
 .PHONY: clean help
 
-CC = gcc
-CFLAGS = -g -I. -Wall -Werror
-
+CC = zig
 
 SRC_DIR = src
-OBJ_DIR = obj
-BIN_DIR = bin
 
+SRC = $(wildcard $(SRC_DIR)/*.zig)
 
-SRC = $(wildcard $(SRC_DIR)/*.c)
-OBJ = $(SRC:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
-
-TARGET = $(BIN_DIR)/client $(BIN_DIR)/server
+TARGET = client server
 
 all: $(TARGET)
 
-$(TARGET): $(OBJ)
-	@mkdir -p $(BIN_DIR)
-	$(CC) $(OBJ) -o $@
-
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
-	@mkdir -p $(OBJ_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+$(TARGET):
+	$(CC) build-exe $(SRC_DIR)/$@.zig -O ReleaseSafe -fstrip
 
 help:
 	@echo "Available targets:"
@@ -35,4 +24,4 @@ submission:
 	zip -r submission.zip $(SRC_DIR) Makefile README.md ASSIGNMENT.md
 
 clean:
-	rm -rf $(OBJ_DIR) $(BIN_DIR) submission.zip
+	rm -rf submission.zip server client *.o zig-out .zig-cache
