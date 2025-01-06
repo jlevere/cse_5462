@@ -33,10 +33,10 @@ pub fn build(b: *std.Build) void {
         run_server.addArgs(args);
     }
 
-    const run_client_step = b.step("run-client", "Run the client application");
+    const run_client_step = b.step("client", "Run the client application");
     run_client_step.dependOn(&run_client.step);
 
-    const run_server_step = b.step("run-server", "Run the server application");
+    const run_server_step = b.step("server", "Run the server application");
     run_server_step.dependOn(&run_server.step);
 
     // Add tests for both executables
