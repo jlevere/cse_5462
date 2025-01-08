@@ -24,6 +24,9 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(OBJ_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+run: all
+	@$(TARGET) || true
+
 help:
 	@echo "Available targets:"
 	@echo "  help        - Show this help message"
