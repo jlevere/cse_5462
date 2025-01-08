@@ -1,4 +1,4 @@
-.PHONY: clean help
+.PHONY: clean help all
 
 CC = gcc
 CFLAGS = -g -I. -Wall -Werror
@@ -8,21 +8,25 @@ SRC_DIR = src
 OBJ_DIR = obj
 BIN_DIR = bin
 
-
-SRC = $(wildcard $(SRC_DIR)/*.c)
-OBJ = $(SRC:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
-
 TARGET = $(BIN_DIR)/client $(BIN_DIR)/server
 
 all: $(TARGET)
 
-$(TARGET): $(OBJ)
-	@mkdir -p $(BIN_DIR)
-	$(CC) $(OBJ) -o $@
+client: $(BIN_DIR)/client
+server: $(BIN_DIR)/server
 
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
-	@mkdir -p $(OBJ_DIR)
+$(BIN_DIR) $(OBJ_DIR):
+	@mkdir -p $@
+
+$(BIN_DIR)/client: $(OBJ_DIR)/client.o | $(BIN_DIR)
+	$(CC) $(CFLAGS) $< -o $@
+
+$(BIN_DIR)/server: $(OBJ_DIR)/server.o | $(BIN_DIR)
+	$(CC) $(CFLAGS) $< -o $@
+
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
+
 
 run: all
 	@$(TARGET) || true
