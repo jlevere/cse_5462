@@ -1,4 +1,4 @@
-.PHONY: clean help
+.PHONY: clean help all
 
 CC = zig
 
