@@ -1,1 +1,3 @@
 *.docx
+.zig-cache
+bin
