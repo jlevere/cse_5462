@@ -30,13 +30,13 @@ pub fn build(b: *std.Build) void {
 
     // Add tests for both executables
     const client_tests = b.addTest(.{
-        .root_source_file = b.path("client.zig"),
+        .root_source_file = b.path("src/client.zig"),
         .target = target,
         .optimize = optimize,
     });
 
     const server_tests = b.addTest(.{
-        .root_source_file = b.path("server.zig"),
+        .root_source_file = b.path("src/server.zig"),
         .target = target,
         .optimize = optimize,
     });
