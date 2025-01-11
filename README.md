@@ -29,6 +29,8 @@ The commands for this:
 
 `git remote add lab0 git@github.com:CSE-5462-OSU-Spring2025/lab0-jLevere.git`
 
+`git subtree add --prefix=lab0 lab0 main --squash`
+
 `git subtree push --prefix=lab0 lab0 main`
 
 Where `lab0` is the name of the remote repo and `lab0/` is the monorepo location for it.  This works quite nicely.
