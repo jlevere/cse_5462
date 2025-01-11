@@ -29,7 +29,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: compiled-binaries
-          path: .zig-out/bin/
+          path: zig-out/bin/
 
   test:
     needs: build
@@ -42,14 +42,14 @@ jobs:
       - uses: actions/download-artifact@v3
         with:
           name: compiled-binaries
-          path: .zig-out/bin/
+          path: zig-out/bin/
 
       - name: Set execute permissions
-        run: chmod +x .zig-out/bin/*
+        run: chmod +x zig-out/bin/*
 
       - name: Run all binaries
         run: |
-          for binary in .zig-out/bin/*; do
+          for binary in zig-out/bin/*; do
             echo "Running $binary"
             $binary || echo "Error running $binary" >&2
           done
