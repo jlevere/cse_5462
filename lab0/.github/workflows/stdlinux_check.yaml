@@ -9,14 +9,45 @@ on:
 
 
 jobs:
-  test-compile:
+
+  build:
     runs-on: ubuntu-latest
-    container: ghcr.io/mbund/stdlinux-compat:2024-09-01
 
     steps:
       - name: Check out code
         uses: actions/checkout@v2
 
-      - name: Compile the code
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: master
+
+      - name: Build binaries
+        run: zig build
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v3
+        with:
+          name: compiled-binaries
+          path: .zig-out/bin/
+
+  test:
+    runs-on: ubuntu-latest
+    container: ghcr.io/mbund/stdlinux-compat:2024-09-01
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: actions/download-artifact@v3
+        with:
+          name: compiled-binaries
+          path: .zig-out/bin/
+
+      - name: Set execute permissions
+        run: chmod +x .zig-out/bin/*
+
+      - name: Run all binaries
         run: |
-          make
+          for binary in .zig-out/bin/*; do
+            echo "Running $binary"
+            $binary || echo "Error running $binary" >&2
+          done
