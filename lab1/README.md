@@ -68,3 +68,11 @@ Description:"this value is too long"
 this_1: "is okay too"
 2nd_is: "good too"
 ```
+
+
+## Design
+
+### Plan
+
+
+We should recive a udp packet, parse it into a hashmap, and then print the hashmap.  That is generally the work flow.
