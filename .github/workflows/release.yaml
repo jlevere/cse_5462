@@ -1,0 +1,39 @@
+name: Scheduled Release
+on:
+  schedule:
+  # This cron schedule triggers at 01/14/25 17:37
+    - cron: '37 17 14 1 *'
+  workflow_dispatch:
+
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: master
+
+      - name: Build binaries
+        run: |
+          zig build -Doptimize=ReleaseSafe
+          mkdir -p dist
+          cp -r zig-out/bin/* dist/
+
+      - name: Package source
+        run: |
+          git archive --format=tar.gz -o source.tar.gz HEAD
+          mv source.tar.gz dist/
+
+      - name: Test output
+        run: |
+          ls -lh dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist/*

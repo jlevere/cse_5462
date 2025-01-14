@@ -1,8 +1,21 @@
 const std = @import("std");
 const UDPSocket = @import("sock.zig").UDPSocket;
 
+fn msgHandler(
+    client_addr: std.net.Address,
+    recv_data: []const u8,
+    resp_buf: []u8,
+) ?usize {
+    _ = client_addr;
+    _ = recv_data;
+
+    const resp = "Welcome to CSE5462.";
+    @memcpy(resp_buf[0..resp.len], resp);
+    return resp.len;
+}
+
 pub fn main() !void {
-    std.debug.print("[+] starting server", .{});
+    std.log.info("starting server", .{});
     var gpa_impl = std.heap.GeneralPurposeAllocator(.{}){};
     defer if (gpa_impl.deinit() == .leak) {
         std.log.warn("gpa has leaked\n", .{});
@@ -27,5 +40,5 @@ pub fn main() !void {
 
     try socket.bind(try std.net.Address.resolveIp(args[1], try std.fmt.parseInt(u16, args[2], 10)));
 
-    try socket.listen();
+    try socket.listen(msgHandler);
 }

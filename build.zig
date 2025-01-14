@@ -22,32 +22,21 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(server_exe);
 
-    const run_client = b.addRunArtifact(client_exe);
-    const run_server = b.addRunArtifact(server_exe);
+    const build_client_step = b.step("client", "Build the cilent");
+    build_client_step.dependOn(&client_exe.step);
 
-    run_client.step.dependOn(b.getInstallStep());
-    run_server.step.dependOn(b.getInstallStep());
-
-    if (b.args) |args| {
-        run_client.addArgs(args);
-        run_server.addArgs(args);
-    }
-
-    const run_client_step = b.step("client", "Run the client application");
-    run_client_step.dependOn(&run_client.step);
-
-    const run_server_step = b.step("server", "Run the server application");
-    run_server_step.dependOn(&run_server.step);
+    const build_server_step = b.step("server", "Build the server");
+    build_server_step.dependOn(&server_exe.step);
 
     // Add tests for both executables
     const client_tests = b.addTest(.{
-        .root_source_file = b.path("client.zig"),
+        .root_source_file = b.path("src/client.zig"),
         .target = target,
         .optimize = optimize,
     });
 
     const server_tests = b.addTest(.{
-        .root_source_file = b.path("server.zig"),
+        .root_source_file = b.path("src/server.zig"),
         .target = target,
         .optimize = optimize,
     });
