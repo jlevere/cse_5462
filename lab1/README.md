@@ -10,6 +10,23 @@ The server joins a multicast group, receives messages from a client, and prints 
 ## Contents
 
    -  Assignment [details](ASSIGNMENT.md)
+   -  [Getting Started](#getting-started)
+
+
+## Getting Started
+
+
+To compile the code you have a few options, use the [development enviroment](#enviroment-setup), or [directly install](#direct-zig-install) the zig compiler.
+
+### Enviroment setup
+
+To use the included nix flake based development enviroment, you can either use `direnv` by running `direnv allow` or you can start the nix flake directly with `nix develop`.
+
+### Direct Zig Install
+
+On MacOS you can install the nix compiler via homebrew with `brew install zig` which will install verssion `0.13.0`.  This code uses `0.14.0` but most things should still work.
+
+For other operating systems, please refer the list of supported package managers [here](https://github.com/ziglang/zig/wiki/Install-Zig-from-a-Package-Manager) or directly download the binaries from [here](https://ziglang.org/learn/getting-started/).
 
 
 ## Notes
