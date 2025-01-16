@@ -1,9 +1,9 @@
 name: Scheduled Release
+
 on:
   schedule:
-  # This cron schedule triggers at 01/14/25 17:37
     - cron: '37 17 14 1 *'
- workflow_dispatch:
+  workflow_dispatch:
     inputs:
       version:
         description: "Version to release"
