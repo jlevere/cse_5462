@@ -28,6 +28,10 @@ On MacOS you can install the nix compiler via homebrew with `brew install zig` w
 
 For other operating systems, please refer the list of supported package managers [here](https://github.com/ziglang/zig/wiki/Install-Zig-from-a-Package-Manager) or directly download the binaries from [here](https://ziglang.org/learn/getting-started/).
 
+### Get the Server
+
+You can compile the code yourself with `zig build` or download a binary compiled for x86-64 linux from the [releases](https://github.com/CSE-5462-OSU-Spring2025/lab1-jLevere/releases/latest/).
+
 
 ## Notes
 
@@ -86,10 +90,10 @@ this_1: "is okay too"
 2nd_is: "good too"
 ```
 
-
 ## Design
 
 ### Plan
 
+We should recive a udp packet, parse it into a hashmap, and then print the hashmap.  That is generally the work flow.  
 
-We should recive a udp packet, parse it into a hashmap, and then print the hashmap.  That is generally the work flow.
+We should allocate a hashmap on each packet that has data in it, and then we should destroy it when it is done so that we dont grow too large.
