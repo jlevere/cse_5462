@@ -1,17 +1,48 @@
 const std = @import("std");
 const UDPSocket = @import("sock.zig").UDPSocket;
+const parseMsg = @import("parser.zig").parseMsg;
+
+pub const std_options: std.Options = .{
+    .log_level = .info,
+};
 
 fn msgHandler(
     client_addr: std.net.Address,
     recv_data: []const u8,
     resp_buf: []u8,
-) ?usize {
+    alloc: std.mem.Allocator,
+) UDPSocket.Error!?usize {
     _ = client_addr;
-    _ = recv_data;
+    _ = resp_buf;
 
-    const resp = "Welcome to CSE5462.";
-    @memcpy(resp_buf[0..resp.len], resp);
-    return resp.len;
+    var map = try parseMsg(alloc, recv_data);
+    defer map.deinit();
+
+    var iter = map.iterator();
+    while (iter.next()) |entry| {
+        std.debug.print("{s:<20}{s:<20}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+    }
+
+    return null;
+}
+
+test "msg handler test simple" {
+    const test_cases = [_][]const u8{
+        "version:1 cmd:send size:45KB",
+        "version:2 cmd:recv msg:\" today2?\"  myName:DAVE",
+    };
+
+    const loopback = try std.net.Address.parseIp4("127.0.0.1", 0);
+    var dummy_resp: [0]u8 = undefined;
+
+    for (test_cases) |case| {
+        _ = try msgHandler(
+            loopback,
+            case,
+            &dummy_resp,
+            std.testing.allocator,
+        );
+    }
 }
 
 pub fn main() !void {
@@ -40,5 +71,5 @@ pub fn main() !void {
 
     try socket.bind(try std.net.Address.resolveIp(args[1], try std.fmt.parseInt(u16, args[2], 10)));
 
-    try socket.listen(msgHandler);
+    try socket.listen(msgHandler, gpa);
 }
