@@ -12,7 +12,7 @@ Building on Project \#1's key-value implementation, this version transitions to 
 - [Getting Started](#getting-started)
 - [Design](#design)
 - [Key Concepts](#key-concepts)
-- [Testing](#testing) [\![Main code fmt and test](https://github.com/CSE-5462-OSU-Spring2025/lab2-jLevere/actions/workflows/main.yaml/badge.svg)](https://github.com/CSE-5462-OSU-Spring2025/lab2-jLevere/actions/workflows/main.yaml)
+- [Testing](#testing) [![Main code fmt and test](https://github.com/CSE-5462-OSU-Spring2025/lab2-jLevere/actions/workflows/main.yaml/badge.svg)](https://github.com/CSE-5462-OSU-Spring2025/lab2-jLevere/actions/workflows/main.yaml)
 
 
 ## Getting Started
