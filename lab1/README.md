@@ -110,3 +110,8 @@ We should allocate a hashmap on each packet that has data in it, and then we sho
 Unit tests can be run with the zig compiler by running `zig build test`.  The unit tests are also run by a github action which will display if the push passes tests or not.
 
 For intigration testing, there is a provided client and data file in the [provided materials](./provided_materials/) directory.
+
+## Examples of usage on coelinux.coeit.osu.edu
+
+![setup](./docs/Screenshot%202025-01-23%20115511.png)
+![running](./docs/Screenshot%202025-01-23%20115627.png)
