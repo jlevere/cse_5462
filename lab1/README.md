@@ -12,7 +12,7 @@ The server joins a multicast group, receives messages from a client, and prints 
    -  Assignment [details](ASSIGNMENT.md)
    -  [Getting Started](#getting-started)
    -  [Design](#design)
-   -  [Testing](#testing) [![Main code fmt and test](https://github.com/CSE-5462-OSU-Spring2025/lab1-jLevere/actions/workflows/main.yaml/badge.svg?event=watch)](https://github.com/CSE-5462-OSU-Spring2025/lab1-jLevere/actions/workflows/main.yaml)
+   -  [Testing](#testing) [![Main code fmt and test](https://github.com/CSE-5462-OSU-Spring2025/lab1-jLevere/actions/workflows/main.yaml/badge.svg)](https://github.com/CSE-5462-OSU-Spring2025/lab1-jLevere/actions/workflows/main.yaml)
 
 
 ## Getting Started
@@ -24,7 +24,7 @@ To compile the code you have a few options, use the [development enviroment](#en
 
 To use the included nix flake based development enviroment, you can either use `direnv` by running `direnv allow` or you can start the nix flake directly with `nix develop`.
 
-To learn more about how awesome nix is, see [nix](https://nixos.org/guides/how-nix-works/) and the [nix-installer](https://github.com/DeterminateSystems/nix-installer) from [Determinate Systems](https://determinate.systems/).
+To learn more about how awesome nix is, see [how-nix-works](https://nixos.org/guides/how-nix-works/) and the [nix-installer](https://github.com/DeterminateSystems/nix-installer).
 
 ### Direct Zig Install
 
