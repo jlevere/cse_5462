@@ -82,7 +82,7 @@ pub const UDPSocket = struct {
         );
 
         if (isIpv4Multicast(addr)) {
-            socket_log.info("Address is multicast, setting sock to add multicast membership", .{});
+            socket_log.info("Addr is multicast, adding multicast sockopts", .{});
 
             const ip_mreq = extern struct {
                 imr_multiaddr: u32,
@@ -114,7 +114,7 @@ pub const UDPSocket = struct {
     }
 
     pub fn listen(self: *Self, handler: MessageHandler, alloc: std.mem.Allocator) !void {
-        socket_log.info("listening on port '{}'", .{self.addr.getPort()});
+        socket_log.info("Listening on port '{}'", .{self.addr.getPort()});
         while (true) {
             var client_addr: std.net.Address = undefined;
             var client_addr_len: std.posix.socklen_t = self.addr.getOsSockLen();

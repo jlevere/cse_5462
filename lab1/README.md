@@ -44,6 +44,8 @@ To run the server simply run the server binary with an ip address and port.  Thi
 ./server 224.0.0.1 8011
 ```
 
+![./server 224.0.0.1 8011](./docs/server.gif)
+
 ## Messages
 
 ### Format

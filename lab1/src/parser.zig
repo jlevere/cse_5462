@@ -36,13 +36,13 @@ pub fn parseMsg(alloc: std.mem.Allocator, input: []const u8) !std.StringArrayHas
     return map;
 }
 
-pub fn printData(alloc: std.mem.Allocator, map: std.StringArrayHashMap([]const u8)) !void {
-    _ = alloc;
-
+pub fn printData(map: std.StringArrayHashMap([]const u8)) !void {
     var iter = map.iterator();
     while (iter.next()) |entry| {
         std.debug.print("{s:<20}{s:<20}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
     }
+
+    std.debug.print("\n", .{});
 }
 
 test "parseMsg with valid inputs" {

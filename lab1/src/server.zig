@@ -1,6 +1,6 @@
 const std = @import("std");
 const UDPSocket = @import("sock.zig").UDPSocket;
-const parseMsg = @import("parser.zig").parseMsg;
+const parse = @import("parser.zig");
 
 pub const std_options: std.Options = .{
     .log_level = .info,
@@ -15,13 +15,10 @@ fn msgHandler(
     _ = client_addr;
     _ = resp_buf;
 
-    var map = try parseMsg(alloc, recv_data);
+    var map = try parse.parseMsg(alloc, recv_data);
     defer map.deinit();
 
-    var iter = map.iterator();
-    while (iter.next()) |entry| {
-        std.debug.print("{s:<20}{s:<20}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
-    }
+    try parse.printData(map);
 
     return null;
 }
