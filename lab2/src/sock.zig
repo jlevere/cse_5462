@@ -2,23 +2,28 @@ const std = @import("std");
 
 const socket_log = std.log.scoped(.socket);
 
+/// A UDP socket supporting direct and multicast IPv4
 pub const UDPSocket = struct {
     const Self = @This();
+
+    /// Underlying OS socket file descriptor
     socketfd: std.posix.socket_t,
-    addr: std.net.Address,
+
+    /// Address the socket is bound to
+    bound_addr: std.net.Address,
 
     recvbuf: [65535]u8,
     sendbuf: [65535]u8,
 
-    pub const Error = error{OutOfMemory};
+    /// UDP socket operation errors
+    pub const Error = error{
+        IPv4OnlySupported,
+        SocketOptionError,
+        BindFailed,
+    };
 
-    pub const MessageHandler = fn (
-        client_addr: std.net.Address,
-        recv_data: []const u8,
-        resp_buf: []u8,
-        alloc: std.mem.Allocator,
-    ) Error!?usize;
-
+    /// Creates a new UDP socket
+    /// Caller must call `deinit()` to clean up resources
     pub fn init() !Self {
         return Self{
             .socketfd = try std.posix.socket(
@@ -26,7 +31,7 @@ pub const UDPSocket = struct {
                 std.posix.SOCK.DGRAM,
                 std.posix.IPPROTO.UDP,
             ),
-            .addr = undefined,
+            .bound_addr = undefined,
             .recvbuf = undefined,
             .sendbuf = undefined,
         };
@@ -36,34 +41,63 @@ pub const UDPSocket = struct {
         std.posix.close(self.socketfd);
     }
 
-    pub fn send(self: *Self, to_address: std.net.Address, msg: []const u8) !void {
-        self.addr = to_address;
-        _ = try std.posix.sendto(
+    /// Sends data to the specified destination address
+    /// Arguments:
+    /// - `dest`: Target address for the datagram
+    /// - `data`: Payload to send (max 65535 bytes)
+    ///
+    /// Returns error if underlying sendto() call fails
+    pub fn sendTo(self: *Self, dest: std.net.Address, data: []const u8) !void {
+        const rc = try std.posix.sendto(
             self.socketfd,
-            msg,
+            data,
             0,
-            &to_address.any,
-            to_address.getOsSockLen(),
+            &dest.any,
+            dest.getOsSockLen(),
         );
+        if (rc != data.len) {
+            socket_log.err("Partial send: {d} of {d} bytes", .{ rc, data.len });
+        }
     }
 
-    pub fn recv(self: Self, buf: []u8) !usize {
-        var client_addr: std.net.Address = undefined;
-        var client_addr_len: std.posix.socklen_t = self.addr.getOsSockLen();
+    /// Receives data from the socket
+    /// Arguments:
+    /// - `buf`: Buffer to store received data (max size: 65535)
+    ///
+    /// Returns:
+    ///   - sender: Source address of received data
+    ///   - bytes_recv: Number of bytes received
+    ///
+    /// Blocks until data is available
+    pub fn recvFrom(self: Self, buf: []u8) !struct {
+        sender: std.net.Address,
+        bytes_recv: usize,
+    } {
+        var sender_addr: std.net.Address = undefined;
+        var sender_addr_len: std.posix.socklen_t = self.bound_addr.getOsSockLen();
 
         const bytes_recved = try std.posix.recvfrom(
             self.socketfd,
             buf,
             0,
-            &client_addr.any,
-            &client_addr_len,
+            &sender_addr.any,
+            &sender_addr_len,
         );
-        return bytes_recved;
+        return .{
+            .sender = sender_addr,
+            .bytes_recv = bytes_recved,
+        };
     }
 
+    /// Binds the socket to a specific address
+    ///
+    /// Arguments:
+    /// - `addr`: Local address to bind to (must be IPv4)
+    ///
+    /// Sets SO_REUSEADDR option automatically
+    ///
+    /// Handles multicast group joining if address is multicast
     pub fn bind(self: *Self, addr: std.net.Address) !void {
-        self.addr = addr;
-
         if (addr.any.family != std.posix.AF.INET) {
             return error.IPv4OnlySupported;
         }
@@ -82,7 +116,7 @@ pub const UDPSocket = struct {
         );
 
         if (isIpv4Multicast(addr)) {
-            socket_log.info("Addr is multicast, adding multicast sockopts", .{});
+            socket_log.info("Joining IPv4 multicast group {any}", .{addr});
 
             const ip_mreq = extern struct {
                 imr_multiaddr: u32,
@@ -106,61 +140,16 @@ pub const UDPSocket = struct {
 
         // Validate we are bound to the right port
         var bound_addr: std.net.Address = undefined;
-        var bound_addr_len: std.posix.socklen_t = self.addr.getOsSockLen();
-
+        var bound_addr_len: std.posix.socklen_t = addr.getOsSockLen();
         try std.posix.getsockname(self.socketfd, &bound_addr.any, &bound_addr_len);
+        self.bound_addr = bound_addr;
 
-        socket_log.info("Socket bound to '{}'", .{bound_addr.getPort()});
-    }
-
-    pub fn listen(self: *Self, handler: MessageHandler, alloc: std.mem.Allocator) !void {
-        socket_log.info("Listening on port '{}'", .{self.addr.getPort()});
-        while (true) {
-            var client_addr: std.net.Address = undefined;
-            var client_addr_len: std.posix.socklen_t = self.addr.getOsSockLen();
-
-            const bytes_recved = try std.posix.recvfrom(
-                self.socketfd,
-                &self.recvbuf,
-                0,
-                &client_addr.any,
-                &client_addr_len,
-            );
-
-            if (bytes_recved == 0) {
-                continue;
-            }
-
-            const recv_data = self.recvbuf[0..bytes_recved];
-
-            socket_log.debug("msg from: '{}' recv: '{s}'", .{
-                client_addr,
-                recv_data,
-            });
-
-            if (try handler(
-                client_addr,
-                recv_data,
-                &self.sendbuf,
-                alloc,
-            )) |resp_len| {
-                _ = try std.posix.sendto(
-                    self.socketfd,
-                    self.sendbuf[0..resp_len],
-                    0,
-                    &client_addr.any,
-                    client_addr_len,
-                );
-
-                socket_log.debug("sent to '{}' data: '{s}'", .{
-                    client_addr,
-                    self.sendbuf[0..resp_len],
-                });
-            }
-        }
+        socket_log.info("Bound to {any}", .{bound_addr});
     }
 };
 
+/// Checks IPv4 address in multicast range (224.0.0.0/4)
+/// Returns true if first octet between 224-239, inclusive
 pub fn isIpv4Multicast(addr: std.net.Address) bool {
     const octets = std.mem.asBytes(&addr.in.sa.addr);
     return octets[0] >= 224 and octets[0] <= 239;
@@ -171,11 +160,27 @@ test "ipv4 multicast check test" {
     const valid_multicast = try std.net.Address.parseIp4("224.0.0.1", 0);
     const invalid_multicast = try std.net.Address.parseIp4("240.0.0.1", 0);
 
-    // Loopback should not be multicast
     try std.testing.expect(!isIpv4Multicast(loopback));
-
-    // Valid multicast
     try std.testing.expect(isIpv4Multicast(valid_multicast));
-
     try std.testing.expect(!isIpv4Multicast(invalid_multicast));
+}
+
+test "Send/Receive basic messages" {
+    var receiver = try UDPSocket.init();
+    defer receiver.deinit();
+    try receiver.bind(try std.net.Address.parseIp4("127.0.0.1", 0));
+
+    var sender = try UDPSocket.init();
+    defer sender.deinit();
+
+    const test_data = "hello there fren :)";
+    var recv_buf: [1024]u8 = undefined;
+
+    try sender.sendTo(receiver.bound_addr, test_data);
+
+    const result = try receiver.recvFrom(&recv_buf);
+    try std.testing.expectEqualStrings(
+        test_data,
+        recv_buf[0..result.bytes_recv],
+    );
 }
