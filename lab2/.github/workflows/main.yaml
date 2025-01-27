@@ -3,7 +3,7 @@ name: Main code fmt and test
 on:
   push:
     branches:
-      - master
+      - main
     paths:
       - 'src/*'
   pull_request:
