@@ -4,12 +4,22 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const version = b.option([]const u8, "version", "Set binary version") orelse "HEAD";
+
+    const build_info = b.addOptions();
+    build_info.addOption([]const u8, "version", version);
+
+    const clap = b.dependency("clap", .{});
+
     const server_exe = b.addExecutable(.{
         .name = "server",
         .target = target,
         .optimize = optimize,
         .root_source_file = b.path("src/server.zig"),
     });
+
+    server_exe.root_module.addImport("clap", clap.module("clap"));
+    server_exe.root_module.addOptions("build_info", build_info);
 
     b.installArtifact(server_exe);
 

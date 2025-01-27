@@ -1,72 +1,72 @@
 const std = @import("std");
+const clap = @import("clap");
 const UDPSocket = @import("sock.zig").UDPSocket;
 const parse = @import("parser.zig");
+const build_info = @import("build_info");
 
 pub const std_options: std.Options = .{
     .log_level = .info,
 };
 
-fn msgHandler(
-    client_addr: std.net.Address,
-    recv_data: []const u8,
-    resp_buf: []u8,
-    alloc: std.mem.Allocator,
-) UDPSocket.Error!?usize {
-    _ = client_addr;
-    _ = resp_buf;
-
-    var map = try parse.parseMsg(alloc, recv_data);
-    defer map.deinit();
-
-    try parse.printData(map);
-
-    return null;
-}
-
-test "msg handler test simple" {
-    const test_cases = [_][]const u8{
-        "version:1 cmd:send size:45KB",
-        "version:2 cmd:recv msg:\" today2?\"  myName:DAVE",
-    };
-
-    const loopback = try std.net.Address.parseIp4("127.0.0.1", 0);
-    var dummy_resp: [0]u8 = undefined;
-
-    for (test_cases) |case| {
-        _ = try msgHandler(
-            loopback,
-            case,
-            &dummy_resp,
-            std.testing.allocator,
-        );
-    }
-}
-
 pub fn main() !void {
-    std.log.info("starting server", .{});
     var gpa_impl = std.heap.GeneralPurposeAllocator(.{}){};
     defer if (gpa_impl.deinit() == .leak) {
         std.log.warn("gpa has leaked\n", .{});
     };
     const gpa = gpa_impl.allocator();
 
-    const args = try std.process.argsAlloc(gpa);
-    defer std.process.argsFree(gpa, args);
+    const params = comptime clap.parseParamsComptime(
+        \\-h, --help       Display this help and exit.
+        \\--version        Display the current version
+        \\--ip <str>       IP address to bind (optional)
+        \\--port <u16>     Port number to bind (optional)
+        \\<str>...     Positional arguments [IP] [PORT]
+        \\
+    );
 
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
+    var diag = clap.Diagnostic{};
 
-    if (std.os.argv.len != 3) {
-        try stdout.print("Usage: {s} <ip> <port>\n", .{std.os.argv[0]});
-        try bw.flush();
-        std.posix.exit(1);
+    var res = clap.parse(clap.Help, &params, clap.parsers.default, .{
+        .diagnostic = &diag,
+        .allocator = gpa,
+    }) catch |err| {
+        diag.report(std.io.getStdErr().writer(), err) catch {};
+        return err;
+    };
+    defer res.deinit();
+
+    if (res.args.version != 0) {
+        std.debug.print("{s}\n", .{build_info.version});
+        return;
     }
+
+    if (res.args.help != 0)
+        return clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
+
+    const ip = res.args.ip orelse blk: {
+        if (res.positionals[0].len < 1) {
+            std.log.err("IP address required", .{});
+            std.log.err("Use --ip or provide as first argument", .{});
+            return clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
+        }
+        break :blk res.positionals[0][0];
+    };
+
+    const port = res.args.port orelse blk: {
+        if (res.positionals[0].len < 2) {
+            std.log.err("Port number required", .{});
+            std.log.err("Use --port or provide as second argument", .{});
+            return clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
+        }
+        const port_str = res.positionals[0][1];
+        break :blk std.fmt.parseInt(u16, port_str, 10) catch |err| {
+            std.log.err("Invalid port '{s}': {s}", .{ port_str, @errorName(err) });
+            return clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
+        };
+    };
 
     var socket = try UDPSocket.init();
     defer socket.deinit();
 
-    try socket.bind(try std.net.Address.resolveIp(args[1], try std.fmt.parseInt(u16, args[2], 10)));
-
-    try socket.listen(msgHandler, gpa);
+    try socket.bind(try std.net.Address.resolveIp(ip, port));
 }
