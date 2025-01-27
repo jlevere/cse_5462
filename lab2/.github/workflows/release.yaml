@@ -2,7 +2,7 @@ name: Scheduled Release
 
 on:
   schedule:
-    - cron: '37 17 23 1 *'
+    - cron: '37 17 4 2 *'
   workflow_dispatch:
     inputs:
       version:
@@ -16,7 +16,8 @@ jobs:
     name: Create the Git tag
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      github.event.pull_request.merged == true
+      github.event.pull_request.merged == true ||
+      github.event_name == 'schedule'
     runs-on: ubuntu-latest
     outputs:
       release-tag: ${{ steps.get-version.outputs.version }}
