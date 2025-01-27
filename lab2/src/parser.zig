@@ -2,8 +2,6 @@ const std = @import("std");
 
 const p_log = std.log.scoped(.parser);
 
-const MAX_LENGTH = 20;
-
 pub fn parseMsg(alloc: std.mem.Allocator, input: []const u8) !std.StringArrayHashMap([]const u8) {
     var map = std.StringArrayHashMap([]const u8).init(alloc);
     errdefer map.deinit();
@@ -12,7 +10,7 @@ pub fn parseMsg(alloc: std.mem.Allocator, input: []const u8) !std.StringArrayHas
     while (pos < input.len) {
         const colon_pos = std.mem.indexOfScalarPos(u8, input, pos, ':') orelse break;
 
-        var key = std.mem.trimLeft(u8, input[pos..colon_pos], &std.ascii.whitespace);
+        const key = std.mem.trimLeft(u8, input[pos..colon_pos], &std.ascii.whitespace);
 
         const next_key_pos = std.mem.indexOfScalarPos(u8, input, colon_pos + 1, ':') orelse input.len;
 
@@ -28,21 +26,18 @@ pub fn parseMsg(alloc: std.mem.Allocator, input: []const u8) !std.StringArrayHas
             break;
         }
 
-        const cut_key = if (key.len > MAX_LENGTH) key[0..20] else key;
-        const cut_value = if (value.len > MAX_LENGTH) value[0..20] else value;
-
-        try map.put(cut_key, cut_value);
+        try map.put(key, value);
     }
     return map;
 }
 
-pub fn printData(map: std.StringArrayHashMap([]const u8)) !void {
+pub fn printData(map: std.StringArrayHashMap([]const u8), writer: std.fs.File.Writer) !void {
     var iter = map.iterator();
     while (iter.next()) |entry| {
-        std.debug.print("{s:<20}{s:<20}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
+        try writer.print("{s:<20}{s:<20}\n", .{ entry.key_ptr.*, entry.value_ptr.* });
     }
 
-    std.debug.print("\n", .{});
+    try writer.print("\n", .{});
 }
 
 test "parseMsg with valid inputs" {
@@ -75,11 +70,11 @@ test "parseMsg with valid inputs" {
         try std.testing.expect(map.contains("TTL"));
         try std.testing.expect(map.contains("myName"));
 
-        const msg = map.get("msg").?;
-        try std.testing.expect(msg.len <= MAX_LENGTH);
-
-        const TTL = map.get("TTL").?;
-        try std.testing.expectEqualStrings("300", TTL);
+        try std.testing.expectEqualStrings("300", map.get("TTL").?);
+        try std.testing.expectEqualStrings("DAVE", map.get("myName").?);
+        try std.testing.expectEqualStrings("20", map.get("location").?);
+        try std.testing.expectEqualStrings("1001", map.get("destination").?);
+        try std.testing.expectEqualStrings("12-1-1", map.get("date").?);
     }
 }
 
