@@ -87,7 +87,7 @@ jobs:
 
       - name: Build binaries
         run: |
-          zig build -Doptimize=ReleaseSafe
+          zig build -Doptimize=ReleaseSafe -Dversion=${{ needs.create-tag.outputs.release-tag }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

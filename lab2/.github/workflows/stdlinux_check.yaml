@@ -23,7 +23,7 @@ jobs:
           version: master
 
       - name: Build binaries
-        run: zig build
+        run: zig build -Dversion=1
 
       - name: Upload binaries
         uses: actions/upload-artifact@v3
@@ -51,5 +51,5 @@ jobs:
         run: |
           for binary in zig-out/bin/*; do
             echo "Running $binary"
-            $binary || echo "Error running $binary" >&2
+            $binary --version || echo "Error running $binary" >&2
           done
