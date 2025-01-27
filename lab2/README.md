@@ -20,7 +20,7 @@ Building on Project \#1's key-value implementation, this version transitions to 
 
 To compile the code you have a few options, use the [development enviroment](#enviroment-setup), or [directly install](#direct-zig-install) the zig compiler.
 
-### Enviroment setup
+### Enviroment setup (HIGHLY RECOMENDED)
 
 To use the Nix flake-based development environment:
 ```bash
@@ -28,13 +28,15 @@ direnv allow  # or
 nix develop
 ```
 
+This will ensure that the LSP, compiler and library versions are all in sync using the `flake.lock` file.
+
 To learn more about how awesome nix is, see [how-nix-works](https://nixos.org/guides/how-nix-works/) and the [nix-installer](https://github.com/DeterminateSystems/nix-installer).
 
 ### Direct Zig Install
 
 For MacOS (via Homebrew):
 ```bash
-brew install zig  # v0.13.0 (v0.14.0 recommended)
+brew install zig  # v0.13.0 (0.14.0-dev.2851+b074fb7dd recommended)
 ```
 Other systems: [Download binaries](https://ziglang.org/learn/getting-started/) or check [supported package managers](https://github.com/ziglang/zig/wiki/Install-Zig-from-a-Package-Manager).
 
@@ -47,6 +49,10 @@ Compile with `zig build` or download pre-built binaries from [releases](https://
 
 ```
 ./server 224.0.0.1 8011
+```
+
+```
+./client 224.0.0.1 8011 input.txt
 ```
 
 ## Design
