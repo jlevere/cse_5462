@@ -55,6 +55,9 @@ pub const UDPSocket = struct {
             &dest.any,
             dest.getOsSockLen(),
         );
+
+        socket_log.debug("Send dest: {} msg: {s}", .{ dest, data });
+
         if (rc != data.len) {
             socket_log.err("Partial send: {d} of {d} bytes", .{ rc, data.len });
         }
@@ -83,6 +86,9 @@ pub const UDPSocket = struct {
             &sender_addr.any,
             &sender_addr_len,
         );
+
+        socket_log.debug("From {} got: {s}", .{ sender_addr, buf });
+
         return .{
             .sender = sender_addr,
             .bytes_recv = bytes_recved,
