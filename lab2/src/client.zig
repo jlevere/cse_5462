@@ -4,8 +4,10 @@ const UDPSocket = @import("sock.zig").UDPSocket;
 const parse = @import("parser.zig");
 const build_info = @import("build_info");
 
+const json = std.json;
+
 pub const std_options: std.Options = .{
-    .log_level = .info,
+    .log_level = .debug,
 };
 
 pub fn main() !void {
@@ -94,5 +96,13 @@ pub fn main() !void {
     var socket = try UDPSocket.init();
     defer socket.deinit();
 
-    try socket.bind(try std.net.Address.resolveIp(ip, port));
+    const stat = try file.stat();
+    const buf = try gpa.alloc(u8, stat.size);
+    defer gpa.free(buf);
+    _ = try file.readAll(buf);
+
+    const json_str = try parse.jsonify_msg(gpa, buf);
+    defer gpa.free(json_str);
+
+    try socket.sendTo(try std.net.Address.resolveIp(ip, port), json_str);
 }
