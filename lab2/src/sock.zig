@@ -12,9 +12,6 @@ pub const UDPSocket = struct {
     /// Address the socket is bound to
     bound_addr: std.net.Address,
 
-    recvbuf: [65535]u8,
-    sendbuf: [65535]u8,
-
     /// UDP socket operation errors
     pub const Error = error{
         IPv4OnlySupported,
@@ -32,8 +29,6 @@ pub const UDPSocket = struct {
                 std.posix.IPPROTO.UDP,
             ),
             .bound_addr = undefined,
-            .recvbuf = undefined,
-            .sendbuf = undefined,
         };
     }
 
@@ -87,7 +82,7 @@ pub const UDPSocket = struct {
             &sender_addr_len,
         );
 
-        socket_log.debug("From {} got: {s}", .{ sender_addr, buf });
+        socket_log.debug("From {} got: {s}", .{ sender_addr, buf[0..bytes_recved] });
 
         return .{
             .sender = sender_addr,

@@ -104,6 +104,16 @@ test "parseMsg with multi word final value - problematic case" {
     try std.testing.expectEqualStrings("\"not dave\"", map.get("myName").?);
 }
 
+test "parseMsg with duplicate keys" {
+    const allocator = std.testing.allocator;
+    const input = "myName:\"not dave\" myName:\"not dave\"";
+
+    var map = try parseMsg(allocator, input);
+    defer map.deinit();
+
+    try std.testing.expectEqualStrings("\"not dave\"", map.get("myName").?);
+}
+
 test "parseMsg with invalid inputs" {
     const allocator = std.testing.allocator;
 

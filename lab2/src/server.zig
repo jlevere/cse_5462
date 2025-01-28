@@ -67,6 +67,30 @@ pub fn main() !void {
 
     var socket = try UDPSocket.init();
     defer socket.deinit();
-
     try socket.bind(try std.net.Address.resolveIp(ip, port));
+
+    const stdout_file = std.io.getStdOut().writer();
+    var bw = std.io.bufferedWriter(stdout_file);
+    const stdout = bw.writer();
+
+    while (true) {
+        const buf = try gpa.alloc(u8, 65535);
+        defer gpa.free(buf);
+
+        const recv_info = try socket.recvFrom(buf);
+
+        const json_values = try std.json.parseFromSlice(
+            std.json.Value,
+            gpa,
+            buf[0..recv_info.bytes_recv],
+            .{ .allocate = .alloc_always },
+        );
+        defer json_values.deinit();
+
+        var iter = json_values.value.object.iterator();
+        while (iter.next()) |entry| {
+            try stdout.print("{s:<20}{s:<}\n", .{ entry.key_ptr.*, entry.value_ptr.string });
+        }
+        try bw.flush();
+    }
 }
