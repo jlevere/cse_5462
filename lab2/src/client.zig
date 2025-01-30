@@ -96,13 +96,15 @@ pub fn main() !void {
     var socket = try UDPSocket.init();
     defer socket.deinit();
 
-    const stat = try file.stat();
-    const buf = try gpa.alloc(u8, stat.size);
-    defer gpa.free(buf);
-    _ = try file.readAll(buf);
+    while (file.reader().readUntilDelimiterOrEofAlloc(gpa, '\n', std.math.maxInt(usize)) catch |err| {
+        std.log.err("Failed to read line: {s}", .{@errorName(err)});
+        return;
+    }) |line| {
+        defer gpa.free(line);
 
-    const json_str = try parse.jsonify_msg(gpa, buf);
-    defer gpa.free(json_str);
+        const json_str = try parse.jsonify_msg(gpa, line);
+        defer gpa.free(json_str);
 
-    try socket.sendTo(try std.net.Address.resolveIp(ip, port), json_str);
+        try socket.sendTo(try std.net.Address.resolveIp(ip, port), json_str);
+    }
 }
