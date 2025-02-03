@@ -21,6 +21,8 @@ pub fn build(b: *std.Build) void {
     server_exe.root_module.addImport("clap", clap.module("clap"));
     server_exe.root_module.addOptions("build_info", build_info);
 
+    const run_server = b.addRunArtifact(server_exe);
+
     b.installArtifact(server_exe);
 
     const client_exe = b.addExecutable(.{
@@ -33,13 +35,19 @@ pub fn build(b: *std.Build) void {
     client_exe.root_module.addImport("clap", clap.module("clap"));
     client_exe.root_module.addOptions("build_info", build_info);
 
+    const run_client = b.addRunArtifact(client_exe);
+
     b.installArtifact(client_exe);
 
+    const run_server_step = b.step("run-server", "Run the Server");
     const build_server_step = b.step("server", "Build the server");
     build_server_step.dependOn(&server_exe.step);
+    run_server_step.dependOn(&run_server.step);
 
+    const run_client_step = b.step("run-client", "Run the Client");
     const build_client_step = b.step("client", "Build the client");
     build_client_step.dependOn(&client_exe.step);
+    run_client_step.dependOn(&run_client.step);
 
     const server_tests = b.addTest(.{
         .root_source_file = b.path("src/server.zig"),
