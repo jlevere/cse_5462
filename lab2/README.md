@@ -55,6 +55,16 @@ Compile with `zig build` or download pre-built binaries from [releases](https://
 ./client 224.0.0.1 8011 input.txt
 ```
 
+
+### In action
+
+![pt1](./docs/lab2-pt1.png)
+
+![pt2](./docs/lab2-pt2.png)
+
+
+
+
 ## Design
 
 ### JSON Object Structure
