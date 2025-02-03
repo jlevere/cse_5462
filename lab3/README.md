@@ -60,21 +60,40 @@ Compile with `zig build` or download pre-built binaries from [releases](https://
 ## Design
 
 ### JSON Object Structure
-Client creates JSON objects containing:
-- `File_Name`: String (e.g., "Presentation4.otp")
-- `File_Size`: String (e.g., "4MB")
-- `File_Type`: String (e.g., "Presentation")
-- `Date_Created`: Date string (e.g., "2024-07-05")
-- `Description`: String (e.g., "Webinar slide deck")
+Each JSON object should contain:
+- `"filename"`: Original filename of the file.
+- `"fileSize"`: Total size of the file in bytes.
+- `"numberOfChunks"`: Number of chunks the file was split into.
+- `"chunk_hashes"`: Array of SHA-256 hashes for each chunk.
+- `"fullFileHash"`: SHA-256 hash for the entire file.
+
+```json
+     {
+       "filename": "ExampleFile.jpeg",
+       "fileSize": 1234567,
+       "numberOfChunks": 6,
+       "chunk_hashes": [
+         "hash_chunk_1",
+         "hash_chunk_2",
+         ...
+       ],
+       "fullFileHash": "hash_for_whole_file"
+     }
+     ```
 
 
 ### Workflow
 ```mermaid
-sequenceDiagram
-    Client->>Client: 1. Serialize JSON
-    Client->>Server: 2. Send via UDP (sendto())
-    Server->>Server: 3. Deserialize JSON
-    Server->>Output: 4. Print formatted data
+flowchart TD
+    A[Original Directory] --> B[Create /CHUNKS Subdirectory]
+    B --> C[Process Each File]
+    C --> D[Split File into\n500KB Chunks]
+    D --> E[Generate SHA-256 Hash\nfor Each Chunk]
+    E --> F[Generate SHA-256 Hash\nfor Whole File]
+    F --> G[Create JSON Metadata\nwith Filename, Size, Chunk Hashes & Full Hash]
+    G --> H[Store Chunks in /CHUNKS\nas <hash>.bin]
+    style A fill:#11f,stroke:#333
+    style H fill:#a1f,stroke:#333
 ```
 
 ## Testing
