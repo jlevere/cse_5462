@@ -1,0 +1,26 @@
+name: Main code fmt and test
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/*"
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: master
+
+      - name: Run zig fmt
+        run: zig fmt --check .
+
+      - name: Run Tests
+        run: zig build test --summary all
