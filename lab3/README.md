@@ -59,6 +59,23 @@ Compile with `zig build` or download pre-built binaries from [releases](https://
 
 ## Design
 
+
+Steps: 
+- `Client` is given a directory containing some number of files
+- `Client` creates a subdirectory in the input directory `CHUNKS`
+- `Client` iterates through the files
+    - Break files into 500kb chunks, each named its hash
+    - Add metadata to the json object
+    - Write this object out, named the file hash.json
+- `Client` Read the index of each files in `CHUNKS` and send it 
+to the broadcast group
+
+
+
+
+
+
+
 ### JSON Object Structure
 Each JSON object should contain:
 - `"filename"`: Original filename of the file.
@@ -79,7 +96,9 @@ Each JSON object should contain:
        ],
        "fullFileHash": "hash_for_whole_file"
      }
-     ```
+```
+
+A json schema document is defined in [schema.json](./docs/schema.json).
 
 
 ### Workflow
