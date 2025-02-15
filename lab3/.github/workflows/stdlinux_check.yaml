@@ -3,14 +3,12 @@ name: stdlinux test compile
 on:
   push:
     branches:
-      - main 
+      - main
     paths:
-      - 'src/*'
+      - "src/*"
   workflow_dispatch:
 
-
 jobs:
-
   build:
     runs-on: ubuntu-latest
 

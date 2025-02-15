@@ -2,7 +2,7 @@ const std = @import("std");
 
 const log = std.log.scoped(.file_chunking);
 
-const File = struct {
+pub const File = struct {
     const Self = @This();
     const Allocator = std.mem.Allocator;
 
@@ -82,6 +82,56 @@ const File = struct {
                 parsed.value.chunk_hashes,
                 parsed.value.fullFileHash,
             );
+        }
+    };
+
+    /// Iterator over manifest files in a given directory
+    pub const Iterator = struct {
+        allocator: std.mem.Allocator,
+        dir: std.fs.Dir,
+        inner_iterator: std.fs.Dir.Iterator,
+        current: ?*File,
+
+        pub fn init(allocator: std.mem.Allocator, dir: std.fs.Dir) Iterator {
+            return .{
+                .allocator = allocator,
+                .dir = dir,
+                .inner_iterator = dir.iterate(),
+                .current = null,
+            };
+        }
+        pub fn deinit(self: *Iterator) void {
+            if (self.current) |file| {
+                file.deinit();
+                self.allocator.destroy(file);
+            }
+        }
+
+        pub fn next(self: *File.Iterator) !?*File {
+            if (self.current) |file| {
+                file.deinit();
+                self.allocator.destroy(file);
+                self.current = null;
+            }
+
+            while (try self.inner_iterator.next()) |entry| {
+                if (entry.kind != .file) continue;
+                if (!std.mem.endsWith(u8, entry.name, ".json")) continue;
+
+                const file = try self.dir.openFile(entry.name, .{});
+                defer file.close();
+
+                const contents = try file.readToEndAlloc(self.allocator, std.math.maxInt(usize));
+                defer self.allocator.free(contents);
+
+                const new_file = try self.allocator.create(File);
+                errdefer self.allocator.destroy(new_file);
+
+                new_file.* = try File.FromJson.parse(self.allocator, contents);
+                self.current = new_file;
+                return new_file;
+            }
+            return null;
         }
     };
 };
@@ -196,7 +246,7 @@ test "File end-to-end serialization" {
     try std.testing.expectEqualStrings(json_buffer.items, verification_buffer.items);
 }
 
-const ChunkDir = struct {
+pub const ChunkDir = struct {
     const Self = @This();
     const Allocator = std.mem.Allocator;
     const Sha256 = std.crypto.hash.sha2.Sha256;
@@ -269,7 +319,7 @@ const ChunkDir = struct {
         const fullFileHash = try std.fmt.allocPrint(self.alloc, "{s}", .{std.fmt.fmtSliceHexLower(&fullFileHash_bytes)});
         defer self.alloc.free(fullFileHash);
 
-        std.debug.print("cache created: {any}\n", .{if (self.cache) |_| true else false});
+        log.info("cache created: {any}", .{if (self.cache) |_| true else false});
 
         if (self.cache) |cache| {
             try thisfile.seekTo(0);
@@ -299,7 +349,7 @@ const ChunkDir = struct {
 
                 try chunk_file.writeAll(buf[0..n]);
 
-                std.debug.print("write chunk {s} of {d} bytes\n", .{ chunkfilename, n });
+                log.info("write chunk {s} of {d} bytes", .{ chunkfilename, n });
             }
 
             const manifest_name = try std.fmt.allocPrint(self.alloc, "{s}.json", .{fullFileHash});
@@ -324,7 +374,7 @@ const ChunkDir = struct {
         }
     }
 
-    pub fn run(self: Self) !void {
+    pub fn buildCache(self: Self) !void {
         var iter = self.dir.iterate();
 
         while (try iter.next()) |entry| {
@@ -334,24 +384,9 @@ const ChunkDir = struct {
 
             try self.chunkFile(entry.name);
         }
+        log.debug("finished building cache", .{});
     }
 };
-
-test "read files" {
-    var dir = try std.fs.cwd().openDir("FILES", .{
-        .iterate = true,
-        .access_sub_paths = false,
-    });
-    defer dir.close();
-
-    var c = try ChunkDir.init(std.testing.allocator, dir, "CHUNKS");
-
-    try c.createCacheDir();
-
-    try c.run();
-
-    //try c.clearCacheDir();
-}
 
 pub fn hash_file(file: std.fs.File) ![std.crypto.hash.sha2.Sha256.digest_length]u8 {
     var sha = std.crypto.hash.sha2.Sha256.init(.{});

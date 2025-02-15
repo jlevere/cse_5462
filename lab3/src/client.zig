@@ -1,13 +1,13 @@
 const std = @import("std");
 const clap = @import("clap");
 const UDPSocket = @import("sock.zig").UDPSocket;
-const parse = @import("parser.zig");
+const file = @import("file_chunking.zig");
 const build_info = @import("build_info");
 
 const json = std.json;
 
 pub const std_options: std.Options = .{
-    .log_level = .info,
+    .log_level = .debug,
 };
 
 pub fn main() !void {
@@ -22,8 +22,8 @@ pub fn main() !void {
         \\--version        Display the current version
         \\--ip <str>       IP address to send to (optional)
         \\--port <u16>     Port number to send to (optional)
-        \\--file <str>     Path to input file (optional)
-        \\<str>...     Positional arguments [IP] [PORT] [FILE]
+        \\--dir <str>     Path to input directory (optional)
+        \\<str>...     Positional arguments [IP] [PORT] [DIR]
         \\
     );
 
@@ -34,7 +34,7 @@ pub fn main() !void {
         .allocator = gpa,
     }) catch |err| {
         diag.report(std.io.getStdErr().writer(), err) catch {};
-        return err;
+        return;
     };
     defer res.deinit();
 
@@ -68,43 +68,75 @@ pub fn main() !void {
         };
     };
 
-    const file_path = res.args.file orelse blk: {
+    const dir_path = res.args.dir orelse blk: {
         if (res.positionals[0].len < 3) {
-            std.log.err("File path required", .{});
+            std.log.err("Dir path required", .{});
             std.log.err("Use --file or provide as third argument", .{});
             return clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
         }
         break :blk res.positionals[0][2];
     };
 
-    const file = std.fs.cwd().openFile(file_path, .{ .mode = .read_only }) catch |err| switch (err) {
+    var dir = std.fs.cwd().openDir(
+        dir_path,
+        .{
+            .iterate = true,
+        },
+    ) catch |err| switch (err) {
         error.FileNotFound => {
-            std.log.err("File not found: '{s}'", .{file_path});
+            std.log.err("Dir not found: '{s}'", .{dir_path});
             return clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
         },
         error.AccessDenied => {
-            std.log.err("Access denied to file: '{s}'", .{file_path});
+            std.log.err("Access denied to dir: '{s}'", .{dir_path});
             return clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
         },
         else => {
-            std.log.err("Unexpected error accessing '{s}': {s}", .{ file_path, @errorName(err) });
+            std.log.err("Unexpected error accessing '{s}': {s}", .{ dir_path, @errorName(err) });
             return clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
         },
     };
-    defer file.close();
+    defer dir.close();
+
+    const cache_name = "CHUNKS";
+
+    var chunk_dir = try file.ChunkDir.init(gpa, dir, cache_name);
+    defer chunk_dir.deinit();
+
+    chunk_dir.createCacheDir() catch |err| switch (err) {
+        error.CacheDirAlreadyExists => {
+            std.log.err("Cache directory already exists", .{});
+            return;
+        },
+        else => {
+            const cache_path = try dir.realpathAlloc(gpa, ".");
+            defer gpa.free(cache_path);
+
+            std.log.err("Unexpected error creating cache at path '{s}/{s}': {s}", .{ cache_path, cache_name, @errorName(err) });
+        },
+    };
+
+    try chunk_dir.buildCache();
 
     var socket = try UDPSocket.init();
     defer socket.deinit();
 
-    while (file.reader().readUntilDelimiterOrEofAlloc(gpa, '\n', std.math.maxInt(usize)) catch |err| {
-        std.log.err("Failed to read line: {s}", .{@errorName(err)});
-        return;
-    }) |line| {
-        defer gpa.free(line);
+    var cache_dir = try dir.openDir(cache_name, .{ .iterate = true });
+    defer cache_dir.close();
 
-        const json_str = try parse.jsonify_msg(gpa, line);
-        defer gpa.free(json_str);
+    var iter = file.File.Iterator.init(gpa, cache_dir);
+    defer iter.deinit();
 
-        try socket.sendTo(try std.net.Address.resolveIp(ip, port), json_str);
+    var buf = std.ArrayList(u8).init(gpa);
+    defer buf.deinit();
+
+    const writer = buf.writer();
+
+    while (try iter.next()) |entry| {
+        try entry.serialize(writer);
+
+        try socket.sendTo(try std.net.Address.resolveIp(ip, port), buf.items);
+
+        buf.clearRetainingCapacity();
     }
 }

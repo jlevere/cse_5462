@@ -8,6 +8,10 @@ pub const std_options: std.Options = .{
     .log_level = .info,
 };
 
+comptime {
+    _ = @import("file_chunking.zig");
+}
+
 pub fn main() !void {
     var gpa_impl = std.heap.GeneralPurposeAllocator(.{}){};
     defer if (gpa_impl.deinit() == .leak) {
@@ -31,7 +35,7 @@ pub fn main() !void {
         .allocator = gpa,
     }) catch |err| {
         diag.report(std.io.getStdErr().writer(), err) catch {};
-        return err;
+        return;
     };
     defer res.deinit();
 
@@ -89,8 +93,22 @@ pub fn main() !void {
 
         var iter = json_values.value.object.iterator();
         while (iter.next()) |entry| {
-            try stdout.print("{s:<20}{s:<}\n", .{ entry.key_ptr.*, entry.value_ptr.string });
+            switch (entry.value_ptr.*) {
+                .string => |str| try stdout.print("{s:<20}{s:<}\n", .{ entry.key_ptr.*, str }),
+                .integer => |int| try stdout.print("{s:<20}{d:<}\n", .{ entry.key_ptr.*, int }),
+                .float => |float| try stdout.print("{s:<20}{:<}\n", .{ entry.key_ptr.*, float }),
+                .bool => |b| try stdout.print("{s:<20}{s:<}\n", .{ entry.key_ptr.*, if (b) "true" else "false" }),
+                .null => try stdout.print("{s:<20}{s:<}\n", .{ entry.key_ptr.*, "(null)" }),
+                .array => {
+                    for (entry.value_ptr.array.items) |arr_item| {
+                        try stdout.print("{s:<20}{s:<}\n", .{ "", arr_item.string });
+                    }
+                },
+                .object => try stdout.print("{s:<20}{s:<}\n", .{ entry.key_ptr.*, "(object)" }),
+                else => unreachable,
+            }
         }
+        try stdout.print("\n", .{});
         try bw.flush();
     }
 }
