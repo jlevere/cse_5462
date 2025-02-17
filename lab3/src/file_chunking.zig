@@ -280,7 +280,7 @@ pub const ChunkDir = struct {
 
     /// Deletes the subdirectory of `dir` named `self.cache_name` and every file inside it.
     /// It is assumed that there are no directories in `self.cache_name`
-    pub fn clearCacheDir(self: *Self) !void {
+    pub fn clearCache(self: *Self) !void {
         var cache = try self.dir.openDir(self.cache_name, .{ .iterate = true });
 
         var iter = cache.iterate();
@@ -293,6 +293,17 @@ pub const ChunkDir = struct {
         cache.close();
 
         try self.dir.deleteDir(self.cache_name);
+    }
+
+    /// Check if the cache directory exists already
+    pub fn cacheExists(self: *Self) !bool {
+        const stat = self.dir.statFile(self.cache_name) catch |err| switch (err) {
+            error.FileNotFound => return false,
+            error.AccessDenied => return error.AccessDenied,
+            else => |e| return e,
+        };
+
+        return stat.kind == .directory;
     }
 
     /// Creates a subdirectory in `dir` named `self.cache_name` to be used as a cache
