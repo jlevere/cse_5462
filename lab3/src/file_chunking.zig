@@ -114,7 +114,7 @@ pub const File = struct {
                 self.current = null;
             }
 
-            while (try self.inner_iterator.next()) |entry| {
+            while (try self.inner_iterator.next()) |entry| : (try std.posix.fsync(self.dir.fd)) {
                 if (entry.kind != .file) continue;
                 if (!std.mem.endsWith(u8, entry.name, ".json")) continue;
 
@@ -284,7 +284,7 @@ pub const ChunkDir = struct {
         var cache = try self.dir.openDir(self.cache_name, .{ .iterate = true });
 
         var iter = cache.iterate();
-        while (try iter.next()) |entry| {
+        while (try iter.next()) |entry| : (std.posix.sync()) {
             if (entry.kind != .file) {
                 continue;
             }
