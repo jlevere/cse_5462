@@ -55,7 +55,10 @@ pub fn main() !void {
         break :blk res.positionals[0][0];
     };
 
-    var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch |err| {
+    var dir = std.fs.cwd().openDir(dir_path, .{
+        .iterate = true,
+        .access_sub_paths = true,
+    }) catch |err| {
         switch (err) {
             error.FileNotFound => std.log.err("Directory not found: '{s}'\n", .{dir_path}),
             error.AccessDenied => std.log.err("Access denied to directory: '{s}'\n", .{dir_path}),
@@ -67,7 +70,6 @@ pub fn main() !void {
 
     const cache_name = "CHUNKS";
     var chunk_dir = try file.ChunkDir.init(gpa, dir, cache_name);
-    defer chunk_dir.deinit();
 
     // Types of operations requested
     const should_clear = res.args.clear != 0;

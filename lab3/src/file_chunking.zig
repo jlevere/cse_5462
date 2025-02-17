@@ -255,7 +255,6 @@ pub const ChunkDir = struct {
 
     alloc: Allocator,
     dir: std.fs.Dir,
-    cache: ?std.fs.Dir,
     cache_name: []const u8,
 
     pub fn init(
@@ -266,63 +265,24 @@ pub const ChunkDir = struct {
         return .{
             .alloc = alloc,
             .dir = dir,
-            .cache = null,
             .cache_name = cache_name,
         };
-    }
-
-    pub fn deinit(self: *Self) void {
-        if (self.cache) |*cache_dir| {
-            cache_dir.close();
-            self.cache = null;
-        }
     }
 
     /// Deletes the subdirectory of `dir` named `self.cache_name` and every file inside it.
     /// It is assumed that there are no directories in `self.cache_name`
     pub fn clearCache(self: *Self) !void {
-        std.debug.print("clearing dir: {s}\n", .{self.cache_name});
+        var cache = try self.dir.openDir(self.cache_name, .{ .iterate = true });
 
-        var cache = try self.dir.openDir(
-            self.cache_name,
-            .{ .iterate = true },
-        );
-        defer cache.close();
-
-        // Force directory sync to refresh NFS cache
-        std.posix.sync();
-
-        var files = std.ArrayList([]const u8).init(self.alloc);
-        defer {
-            for (files.items) |entry| self.alloc.free(entry);
-            files.deinit();
-        }
-
-        // Collect file names with retry logic
-        var found_files = false;
-        var retries: u8 = 0;
-        while (retries < 5) : (retries += 1) {
-            var iter = cache.iterate();
-            while (try iter.next()) |entry| {
-                if (entry.kind == .file) {
-                    found_files = true;
-                    try files.append(try self.alloc.dupe(u8, entry.name));
-                }
+        var iter = cache.iterate();
+        while (try iter.next()) |entry| {
+            if (entry.kind != .file) {
+                continue;
             }
-            if (found_files) break;
-            std.time.sleep(10_000_000); // 10ms delay
-            try std.posix.fsync(cache.fd);
+            try cache.deleteFile(entry.name);
         }
+        cache.close();
 
-        std.debug.print("read all files {any}\n", .{files.items});
-
-        // Delete files
-        for (files.items) |filename| {
-            try cache.deleteFile(filename);
-            std.posix.sync();
-        }
-
-        try std.posix.fsync(self.dir.fd);
         try self.dir.deleteDir(self.cache_name);
     }
 
@@ -345,7 +305,6 @@ pub const ChunkDir = struct {
             },
             else => return err,
         };
-        self.cache = try self.dir.openDir(self.cache_name, .{});
     }
 
     /// Given a filename, break it up into 500kb chunks, write them into
@@ -361,59 +320,58 @@ pub const ChunkDir = struct {
         const fullFileHash = try std.fmt.allocPrint(self.alloc, "{s}", .{std.fmt.fmtSliceHexLower(&fullFileHash_bytes)});
         defer self.alloc.free(fullFileHash);
 
-        log.info("cache created: {any}", .{if (self.cache) |_| true else false});
+        var cache = try self.dir.openDir(self.cache_name, .{ .iterate = true });
+        defer cache.close();
 
-        if (self.cache) |cache| {
-            try thisfile.seekTo(0);
-            var filereader = thisfile.reader();
+        try thisfile.seekTo(0);
+        var filereader = thisfile.reader();
 
-            var chunk_hashes = std.ArrayList([]const u8).init(self.alloc);
-            defer {
-                for (chunk_hashes.items) |hash| self.alloc.free(hash);
-                chunk_hashes.deinit();
-            }
-
-            var buf: [CHUNK_SIZE]u8 = undefined;
-            while (true) {
-                const n = try filereader.read(&buf);
-                if (n == 0) break;
-
-                var sha = std.crypto.hash.sha2.Sha256.init(.{});
-                sha.update(buf[0..n]);
-
-                const chunkfilename = try std.fmt.allocPrint(self.alloc, "{s}", .{std.fmt.fmtSliceHexLower(&sha.finalResult())});
-                defer self.alloc.free(chunkfilename);
-
-                try chunk_hashes.append(try self.alloc.dupe(u8, chunkfilename));
-
-                var chunk_file = try cache.createFile(chunkfilename, .{});
-                defer chunk_file.close();
-
-                try chunk_file.writeAll(buf[0..n]);
-
-                log.info("write chunk {s} of {d} bytes", .{ chunkfilename, n });
-            }
-
-            const manifest_name = try std.fmt.allocPrint(self.alloc, "{s}.json", .{fullFileHash});
-            defer self.alloc.free(manifest_name);
-
-            var fileobj = try File.init(
-                self.alloc,
-                filename,
-                100,
-                chunk_hashes.items,
-                fullFileHash,
-            );
-            defer fileobj.deinit();
-
-            var json_buffer = std.ArrayList(u8).init(self.alloc);
-            defer json_buffer.deinit();
-            try fileobj.serialize(json_buffer.writer());
-
-            var manafest = try cache.createFile(manifest_name, .{});
-            try manafest.writeAll(json_buffer.items);
-            manafest.close();
+        var chunk_hashes = std.ArrayList([]const u8).init(self.alloc);
+        defer {
+            for (chunk_hashes.items) |hash| self.alloc.free(hash);
+            chunk_hashes.deinit();
         }
+
+        var buf: [CHUNK_SIZE]u8 = undefined;
+        while (true) {
+            const n = try filereader.read(&buf);
+            if (n == 0) break;
+
+            var sha = std.crypto.hash.sha2.Sha256.init(.{});
+            sha.update(buf[0..n]);
+
+            const chunkfilename = try std.fmt.allocPrint(self.alloc, "{s}", .{std.fmt.fmtSliceHexLower(&sha.finalResult())});
+            defer self.alloc.free(chunkfilename);
+
+            try chunk_hashes.append(try self.alloc.dupe(u8, chunkfilename));
+
+            var chunk_file = try cache.createFile(chunkfilename, .{});
+            defer chunk_file.close();
+
+            try chunk_file.writeAll(buf[0..n]);
+
+            log.info("write chunk {s} of {d} bytes", .{ chunkfilename, n });
+        }
+
+        const manifest_name = try std.fmt.allocPrint(self.alloc, "{s}.json", .{fullFileHash});
+        defer self.alloc.free(manifest_name);
+
+        var fileobj = try File.init(
+            self.alloc,
+            filename,
+            100,
+            chunk_hashes.items,
+            fullFileHash,
+        );
+        defer fileobj.deinit();
+
+        var json_buffer = std.ArrayList(u8).init(self.alloc);
+        defer json_buffer.deinit();
+        try fileobj.serialize(json_buffer.writer());
+
+        var manafest = try cache.createFile(manifest_name, .{});
+        try manafest.writeAll(json_buffer.items);
+        manafest.close();
     }
 
     pub fn buildCache(self: Self) !void {
