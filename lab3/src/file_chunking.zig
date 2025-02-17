@@ -114,7 +114,7 @@ pub const File = struct {
                 self.current = null;
             }
 
-            while (try self.inner_iterator.next()) |entry| : (try std.posix.fsync(self.dir.fd)) {
+            while (try self.inner_iterator.next()) |entry| {
                 if (entry.kind != .file) continue;
                 if (!std.mem.endsWith(u8, entry.name, ".json")) continue;
 
@@ -281,17 +281,48 @@ pub const ChunkDir = struct {
     /// Deletes the subdirectory of `dir` named `self.cache_name` and every file inside it.
     /// It is assumed that there are no directories in `self.cache_name`
     pub fn clearCache(self: *Self) !void {
-        var cache = try self.dir.openDir(self.cache_name, .{ .iterate = true });
+        std.debug.print("clearing dir: {s}\n", .{self.cache_name});
 
-        var iter = cache.iterate();
-        while (try iter.next()) |entry| : (std.posix.sync()) {
-            if (entry.kind != .file) {
-                continue;
-            }
-            try cache.deleteFile(entry.name);
+        var cache = try self.dir.openDir(
+            self.cache_name,
+            .{ .iterate = true },
+        );
+        defer cache.close();
+
+        // Force directory sync to refresh NFS cache
+        std.posix.sync();
+
+        var files = std.ArrayList([]const u8).init(self.alloc);
+        defer {
+            for (files.items) |entry| self.alloc.free(entry);
+            files.deinit();
         }
-        cache.close();
 
+        // Collect file names with retry logic
+        var found_files = false;
+        var retries: u8 = 0;
+        while (retries < 5) : (retries += 1) {
+            var iter = cache.iterate();
+            while (try iter.next()) |entry| {
+                if (entry.kind == .file) {
+                    found_files = true;
+                    try files.append(try self.alloc.dupe(u8, entry.name));
+                }
+            }
+            if (found_files) break;
+            std.time.sleep(10_000_000); // 10ms delay
+            try std.posix.fsync(cache.fd);
+        }
+
+        std.debug.print("read all files {any}\n", .{files.items});
+
+        // Delete files
+        for (files.items) |filename| {
+            try cache.deleteFile(filename);
+            std.posix.sync();
+        }
+
+        try std.posix.fsync(self.dir.fd);
         try self.dir.deleteDir(self.cache_name);
     }
 
@@ -398,6 +429,29 @@ pub const ChunkDir = struct {
         log.debug("finished building cache", .{});
     }
 };
+
+test "dir iterate test Files" {
+    var dir = try std.fs.cwd().openDir("FILES", .{ .iterate = true });
+    defer dir.close();
+
+    var iter = dir.iterate();
+    while (try iter.next()) |entry| {
+        std.debug.print("{s}\n", .{entry.name});
+    }
+}
+
+test "dir iterate test CHUNKS" {
+    var dir = try std.fs.cwd().openDir("FILES", .{ .iterate = true });
+    defer dir.close();
+
+    var cache = try dir.openDir("CHUNKS", .{ .iterate = true });
+    defer cache.close();
+
+    var iter = cache.iterate();
+    while (try iter.next()) |entry| {
+        std.debug.print("{s}\n", .{entry.name});
+    }
+}
 
 pub fn hash_file(file: std.fs.File) ![std.crypto.hash.sha2.Sha256.digest_length]u8 {
     var sha = std.crypto.hash.sha2.Sha256.init(.{});
