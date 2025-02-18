@@ -50,11 +50,11 @@ Compile with `zig build` or download pre-built binaries from [releases](https://
 
 
 ```
-./server 224.0.0.1 8011
+./server 8011
 ```
 
 ```
-./client 224.0.0.1 8011 input.txt
+./client FILES/ --ip 224.0.0.1 --port 8011
 ```
 
 ## Design

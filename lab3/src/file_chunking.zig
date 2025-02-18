@@ -272,7 +272,10 @@ pub const ChunkDir = struct {
     /// Deletes the subdirectory of `dir` named `self.cache_name` and every file inside it.
     /// It is assumed that there are no directories in `self.cache_name`
     pub fn clearCache(self: *Self) !void {
-        var cache = try self.dir.openDir(self.cache_name, .{ .iterate = true });
+        const realpath = try self.dir.realpathAlloc(self.alloc, self.cache_name);
+        defer self.alloc.free(realpath);
+
+        var cache = try std.fs.openDirAbsolute(realpath, .{ .iterate = true });
 
         var iter = cache.iterate();
         while (try iter.next()) |entry| {
@@ -281,6 +284,7 @@ pub const ChunkDir = struct {
             }
             try cache.deleteFile(entry.name);
         }
+
         cache.close();
 
         try self.dir.deleteDir(self.cache_name);
@@ -374,6 +378,7 @@ pub const ChunkDir = struct {
         manafest.close();
     }
 
+    /// Build the cache directory by chunking files and putting into cache
     pub fn buildCache(self: Self) !void {
         var iter = self.dir.iterate();
 
@@ -381,35 +386,34 @@ pub const ChunkDir = struct {
             if (entry.kind != .file) {
                 continue;
             }
-
             try self.chunkFile(entry.name);
         }
         log.debug("finished building cache", .{});
     }
 };
 
-test "dir iterate test Files" {
-    var dir = try std.fs.cwd().openDir("FILES", .{ .iterate = true });
-    defer dir.close();
+// test "dir iterate test Files" {
+//     var dir = try std.fs.cwd().openDir("FILES", .{ .iterate = true });
+//     defer dir.close();
 
-    var iter = dir.iterate();
-    while (try iter.next()) |entry| {
-        std.debug.print("{s}\n", .{entry.name});
-    }
-}
+//     var iter = dir.iterate();
+//     while (try iter.next()) |entry| {
+//         std.debug.print("{s}\n", .{entry.name});
+//     }
+// }
 
-test "dir iterate test CHUNKS" {
-    var dir = try std.fs.cwd().openDir("FILES", .{ .iterate = true });
-    defer dir.close();
+// test "dir iterate test CHUNKS" {
+//     var dir = try std.fs.cwd().openDir("FILES", .{ .iterate = true });
+//     defer dir.close();
 
-    var cache = try dir.openDir("CHUNKS", .{ .iterate = true });
-    defer cache.close();
+//     var cache = try dir.openDir("CHUNKS", .{ .iterate = true });
+//     defer cache.close();
 
-    var iter = cache.iterate();
-    while (try iter.next()) |entry| {
-        std.debug.print("{s}\n", .{entry.name});
-    }
-}
+//     var iter = cache.iterate();
+//     while (try iter.next()) |entry| {
+//         std.debug.print("{s}\n", .{entry.name});
+//     }
+// }
 
 pub fn hash_file(file: std.fs.File) ![std.crypto.hash.sha2.Sha256.digest_length]u8 {
     var sha = std.crypto.hash.sha2.Sha256.init(.{});

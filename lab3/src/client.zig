@@ -102,7 +102,13 @@ pub fn main() !void {
         var socket = try UDPSocket.init();
         defer socket.deinit();
 
-        var cache_dir = try dir.openDir(cache_name, .{ .iterate = true });
+        const realpath = try dir.realpathAlloc(gpa, cache_name);
+        defer gpa.free(realpath);
+
+        var cache_dir = try dir.openDir(cache_name, .{
+            .iterate = true,
+            .access_sub_paths = true,
+        });
         defer cache_dir.close();
 
         var iter = file.File.Iterator.init(gpa, cache_dir);
