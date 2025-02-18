@@ -57,6 +57,8 @@ Compile with `zig build` or download pre-built binaries from [releases](https://
 ./client FILES/ --ip 224.0.0.1 --port 8011
 ```
 
+![client.gif](./docs/client.gif)
+
 ## Design
 
 
