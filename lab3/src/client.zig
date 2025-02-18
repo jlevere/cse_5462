@@ -79,6 +79,9 @@ pub fn main() !void {
 
     // Clear cache if requested
     if (should_clear) {
+        if (!try chunk_dir.cacheExists()) {
+            return;
+        }
         try chunk_dir.clearCache();
         if (!should_rebuild and !has_ip) return; // Exit if only clearing was requested
     }
@@ -105,7 +108,7 @@ pub fn main() !void {
         const realpath = try dir.realpathAlloc(gpa, cache_name);
         defer gpa.free(realpath);
 
-        var cache_dir = try dir.openDir(cache_name, .{
+        var cache_dir = try std.fs.openDirAbsolute(realpath, .{
             .iterate = true,
             .access_sub_paths = true,
         });
