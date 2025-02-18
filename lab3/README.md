@@ -76,8 +76,6 @@ to the broadcast group
 
 
 
-
-
 ### JSON Object Structure
 Each JSON object should contain:
 - `"filename"`: Original filename of the file.
@@ -102,24 +100,9 @@ Each JSON object should contain:
 
 A json schema document is defined in [schema.json](./docs/schema.json).
 
-
-### Workflow
-```mermaid
-flowchart TD
-    A[Original Directory] --> B[Create /CHUNKS Subdirectory]
-    B --> C[Process Each File]
-    C --> D[Split File into\n500KB Chunks]
-    D --> E[Generate SHA-256 Hash\nfor Each Chunk]
-    E --> F[Generate SHA-256 Hash\nfor Whole File]
-    F --> G[Create JSON Metadata\nwith Filename, Size, Chunk Hashes & Full Hash]
-    G --> H[Store Chunks in /CHUNKS\nas <hash>.bin]
-    style A fill:#11f,stroke:#333
-    style H fill:#a1f,stroke:#333
-```
-
 ## Testing
 **Unit Tests:**
 ```bash
-zig build test
+zig build test --summary all
 ```
-
+![test.gif](./docs/tests.gif)
