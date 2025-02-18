@@ -59,6 +59,11 @@ Compile with `zig build` or download pre-built binaries from [releases](https://
 
 ![client.gif](./docs/client.gif)
 
+
+![pt1](./docs/lab3-pt1.png)
+![pt2](./docs/lab3-pt2.png)
+
+
 ## Design
 
 

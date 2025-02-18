@@ -25,6 +25,7 @@ pub fn main() !void {
         \\-p, --port <u16>         Port number to send to
         \\-r, --rebuild            Rebuild the cache
         \\-c, --clear              Clear the cache
+        \\--count                  Count files in cache
         \\<str>...                 Positional arguments [DIR]
         \\
     );
@@ -55,10 +56,7 @@ pub fn main() !void {
         break :blk res.positionals[0][0];
     };
 
-    var dir = std.fs.cwd().openDir(dir_path, .{
-        .iterate = true,
-        .access_sub_paths = true,
-    }) catch |err| {
+    var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch |err| {
         switch (err) {
             error.FileNotFound => std.log.err("Directory not found: '{s}'\n", .{dir_path}),
             error.AccessDenied => std.log.err("Access denied to directory: '{s}'\n", .{dir_path}),
@@ -79,9 +77,7 @@ pub fn main() !void {
 
     // Clear cache if requested
     if (should_clear) {
-        if (!try chunk_dir.cacheExists()) {
-            return;
-        }
+        if (!try chunk_dir.cacheExists()) return;
         try chunk_dir.clearCache();
         if (!should_rebuild and !has_ip) return; // Exit if only clearing was requested
     }
@@ -105,13 +101,7 @@ pub fn main() !void {
         var socket = try UDPSocket.init();
         defer socket.deinit();
 
-        const realpath = try dir.realpathAlloc(gpa, cache_name);
-        defer gpa.free(realpath);
-
-        var cache_dir = try std.fs.openDirAbsolute(realpath, .{
-            .iterate = true,
-            .access_sub_paths = true,
-        });
+        var cache_dir = try dir.openDir(cache_name, .{ .iterate = true });
         defer cache_dir.close();
 
         var iter = file.File.Iterator.init(gpa, cache_dir);
