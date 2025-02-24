@@ -13,14 +13,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@main
 
-      - uses: mlugg/setup-zig@v1
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
         with:
-          version: master
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run zig fmt
-        run: zig fmt --check .
+        run: nix develop --command zig fmt --check .
 
       - name: Run Tests
-        run: zig build test --summary all
+        run: nix develop --command zig build test --summary all
