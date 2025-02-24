@@ -1,7 +1,0 @@
-{
-    "files.associations": {
-        "*.py": "python",
-        "types.h": "c"
-    },
-    "editor.formatOnSave": true,
-}
