@@ -1,0 +1,14 @@
+{
+    "zig.path": "zig",
+    "zig.zls.path": "zls",
+    "zig.zls.enableBuildOnSave": true,
+    "zig.zls.enableAutofix": true,
+    "zig.zls.buildOnSaveStep": "test",
+
+    "json.schemas": [
+      {
+        "fileMatch": ["CHUNKS/*.json"],
+        "url": "./docs/schema.json"
+      }
+    ]
+  }
