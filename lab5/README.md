@@ -1,6 +1,6 @@
 # Project 5: Server-Side File Sharing System with Client Tracking
 
-![GitHub release (latest by tag)](https://img.shields.io/github/v/tag/CSE-5462-OSU-Spring2025/lab5-jLevere?label=release)
+[![Scheduled Release](https://github.com/CSE-5462-OSU-Spring2025/lab5-jlevere/actions/workflows/release.yaml/badge.svg?event=release)](https://github.com/CSE-5462-OSU-Spring2025/lab5-jlevere/actions/workflows/release.yaml)
 
 
 ## Intro
