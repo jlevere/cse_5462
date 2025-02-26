@@ -104,7 +104,7 @@ pub fn main() !void {
         var cache_dir = try dir.openDir(cache_name, .{ .iterate = true });
         defer cache_dir.close();
 
-        var iter = file.File.Iterator.init(gpa, cache_dir);
+        var iter = file.ChunkDir.Iterator.init(gpa, cache_dir);
         defer iter.deinit();
 
         var buf = std.ArrayList(u8).init(gpa);
