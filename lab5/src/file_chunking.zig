@@ -84,55 +84,6 @@ pub const File = struct {
             );
         }
     };
-
-    /// Iterator over manifest files in a given directory
-    pub const Iterator = struct {
-        allocator: std.mem.Allocator,
-        dir: std.fs.Dir,
-        inner_iterator: std.fs.Dir.Iterator,
-        current: ?*File,
-
-        pub fn init(allocator: std.mem.Allocator, dir: std.fs.Dir) Iterator {
-            return .{
-                .allocator = allocator,
-                .dir = dir,
-                .inner_iterator = dir.iterate(),
-                .current = null,
-            };
-        }
-        pub fn deinit(self: *Iterator) void {
-            if (self.current) |file| {
-                file.deinit();
-                self.allocator.destroy(file);
-            }
-        }
-
-        pub fn next(self: *File.Iterator) !?*File {
-            if (self.current) |file| {
-                file.deinit();
-                self.allocator.destroy(file);
-                self.current = null;
-            }
-
-            while (try self.inner_iterator.next()) |entry| {
-                if (!std.mem.endsWith(u8, entry.name, ".json")) continue;
-
-                const file = try self.dir.openFile(entry.name, .{});
-                defer file.close();
-
-                const contents = try file.readToEndAlloc(self.allocator, std.math.maxInt(usize));
-                defer self.allocator.free(contents);
-
-                const new_file = try self.allocator.create(File);
-                errdefer self.allocator.destroy(new_file);
-
-                new_file.* = try File.FromJson.parse(self.allocator, contents);
-                self.current = new_file;
-                return new_file;
-            }
-            return null;
-        }
-    };
 };
 
 test "File deserialize" {
@@ -385,6 +336,55 @@ pub const ChunkDir = struct {
         }
         log.debug("finished building cache", .{});
     }
+
+    /// Iterator over manifest files in a given directory
+    pub const Iterator = struct {
+        allocator: std.mem.Allocator,
+        dir: std.fs.Dir,
+        inner_iterator: std.fs.Dir.Iterator,
+        current: ?*File,
+
+        pub fn init(allocator: std.mem.Allocator, dir: std.fs.Dir) Iterator {
+            return .{
+                .allocator = allocator,
+                .dir = dir,
+                .inner_iterator = dir.iterate(),
+                .current = null,
+            };
+        }
+        pub fn deinit(self: *Iterator) void {
+            if (self.current) |file| {
+                file.deinit();
+                self.allocator.destroy(file);
+            }
+        }
+
+        pub fn next(self: *ChunkDir.Iterator) !?*File {
+            if (self.current) |file| {
+                file.deinit();
+                self.allocator.destroy(file);
+                self.current = null;
+            }
+
+            while (try self.inner_iterator.next()) |entry| {
+                if (!std.mem.endsWith(u8, entry.name, ".json")) continue;
+
+                const file = try self.dir.openFile(entry.name, .{});
+                defer file.close();
+
+                const contents = try file.readToEndAlloc(self.allocator, std.math.maxInt(usize));
+                defer self.allocator.free(contents);
+
+                const new_file = try self.allocator.create(File);
+                errdefer self.allocator.destroy(new_file);
+
+                new_file.* = try File.FromJson.parse(self.allocator, contents);
+                self.current = new_file;
+                return new_file;
+            }
+            return null;
+        }
+    };
 };
 
 pub fn hash_file(file: std.fs.File) ![std.crypto.hash.sha2.Sha256.digest_length]u8 {
