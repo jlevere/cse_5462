@@ -22,17 +22,22 @@ const testing = std.testing;
 /// const expected_items = 100_000;
 /// const false_pos_rate = 0.01;
 ///
-/// const n_bits = @as(usize, @intFromFloat(
-///    -(@as(f64, @floatFromInt(expected_items)) * @log(false_pos_rate) /
-///    (@ln(2) * @ln(2))
-/// ));
-/// const K = @max(1, @as(usize, @intFromFloat(
-///    (@as(f64, @floatFromInt(n_bits)) / expected_items * @ln(2)
-/// )));
+/// const n_bits = std.math.ceilPowerOfTwo(
+///     usize,
+///     @as(
+///         usize,
+///         @intFromFloat(-(@as(f64, @floatFromInt(expected_items)) * @log(false_pos_rate) / (std.math.ln2 * std.math.ln2))),
+///     ),
+/// ) catch unreachable;
+/// const K = @max(
+///     1,
+///     @as(
+///         usize,
+///         @intFromFloat((@as(f64, @floatFromInt(n_bits)) / expected_items) * std.math.ln2),
+///     ),
+/// );
 ///
-/// const pow2_bits = std.math.ceilPowerOfTwo(usize, n_bits) catch unreachable;
-///
-/// const bf = BloomFilter(pow2_bits, K, WyHash);
+/// const bf = BloomFilter(n_bits, K, WyHash);
 pub fn BloomFilter(
     /// Size of bloom filter in bits, must be a power of two
     comptime n_bits: usize,
@@ -86,7 +91,7 @@ pub fn BloomFilter(
 
 /// Very fast hash for 64bit arch with small keys
 /// https://github.com/wangyi-fudan/wyhash
-fn wyhash(ki: usize, input: []const u8) u64 {
+pub fn wyhash(ki: usize, input: []const u8) u64 {
     var hasher = std.hash.Wyhash.init(@intCast(ki));
     hasher.update(input);
     return hasher.final();
