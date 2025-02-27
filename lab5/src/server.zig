@@ -10,6 +10,9 @@ pub const std_options: std.Options = .{
 
 comptime {
     _ = @import("file_chunking.zig");
+    _ = @import("array_linked_list.zig");
+    _ = @import("bloom_filter.zig");
+    _ = @import("file_registry.zig");
 }
 
 pub fn main() !void {
