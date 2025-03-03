@@ -18,7 +18,7 @@ jobs:
 
       - uses: mlugg/setup-zig@v1
         with:
-          version: master
+          version: 0.13.0
 
       - name: Build binaries
         run: zig build -Dversion=1
