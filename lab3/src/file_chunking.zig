@@ -358,7 +358,7 @@ pub const ChunkDir = struct {
         var fileobj = try File.init(
             self.alloc,
             filename,
-            100,
+            (try thisfile.stat()).size,
             chunk_hashes.items,
             fullFileHash,
         );
