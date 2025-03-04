@@ -59,6 +59,30 @@ Compile with `zig build` or download pre-built binaries from [releases](https://
 ## Design
 
 
+This project was implmented with Data Oriented Design principles in mind.
+
+The server uses a Multi Array List as an internal data structure.  This data structure stores seperate lists for each field of the struct of the data type it is built for. This allows both memory savings and very fast operations through cache usage improvements and the abilitry to use SIMD for some operations.
+
+If we breakdown the most common operations of the file registry we get the following:
+- Contains hash
+- Retrive clients from hash
+- Add new client
+- Add new file
+
+In that order as well. If we look at these even more, in every case, we need to check if the registry contains a hash.  Every operation requires this.
+
+To help speed this up, we can use a Bloom Filter to preform negtive lookups, and a hashmap to map hashes to entries in our primary data structure, the multiarraylist.
+
+This provides constant time lookup and membership test system for hashes.
+
+This takes care of our first operation, "contains hash", and "retrive clients from hash".
+
+When we create a new file, we can preallocate a few clients for it, since we assume there will be multiple clients per file. Clients are stored as std.net.Addess objects which are fairly small and stored in an arraylist anyway.
+
+
+This helps optimize our most frequent operations.
+
+
 ### Workflow
 ```mermaid
 graph TD
