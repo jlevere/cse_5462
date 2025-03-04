@@ -61,6 +61,10 @@ Compile with `zig build` or download pre-built binaries from [releases](https://
 ![server.gif](./docs/server.gif)
 
 
+![pt1](./docs/lab5-pt1.png)
+![pt2](./docs/lab5-pt2.png)
+
+
 ## Design
 
 While I slightly deviated from the design proposed in the [assignment](./ASSIGNMENT.md), I ensured that all functional and interoperability requirements were still met.
@@ -102,18 +106,7 @@ This approach reduces overhead and further optimizes the most frequent operation
 
 
 ### Workflow
-```mermaid
-graph TD
-    A[Client Sends JSON File Metadata] --> B[Server Receives Data]
-    B --> C{Check FileInfo Linked List}
-    C -->|Hash Exists| D[Update Existing Entry]
-    D --> E[Add Client IP/Port if New]
-    E --> F[Increment numberOfPeers]
-    C -->|Hash Doesn't Exist| G[Create New FileInfo Node]
-    G --> H[Store Filename, Hash, Client IP/Port]
-    H --> I[Set numberOfPeers = 1]
-    I --> J[Link Node to List]
-```
+![workflow](./docs/lab5-flow.png)
 
 
 ### JSON Object Structure
