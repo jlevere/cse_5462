@@ -1,0 +1,27 @@
+name: Main code fmt and test
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/*"
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@main
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run zig fmt
+        run: nix develop --command zig fmt --check .
+
+      - name: Run Tests
+        run: nix develop --command zig build test --summary all
