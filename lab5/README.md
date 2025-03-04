@@ -52,8 +52,13 @@ Compile with `zig build` or download pre-built binaries from [releases](https://
 ```
 
 ```
-./client 224.0.0.1 8011 input.txt
+./client FILES/ --ip 224.0.0.1 --port 8011
 ```
+
+![client.gif](./docs/client.gif)
+
+
+![server.gif](./docs/server.gif)
 
 
 ## Design
@@ -110,9 +115,34 @@ graph TD
     I --> J[Link Node to List]
 ```
 
+
+### JSON Object Structure
+Each JSON object should contain:
+- `"filename"`: Original filename of the file.
+- `"fileSize"`: Total size of the file in bytes.
+- `"numberOfChunks"`: Number of chunks the file was split into.
+- `"chunk_hashes"`: Array of SHA-256 hashes for each chunk.
+- `"fullFileHash"`: SHA-256 hash for the entire file.
+
+```json
+     {
+       "filename": "ExampleFile.jpeg",
+       "fileSize": 1234567,
+       "numberOfChunks": 6,
+       "chunk_hashes": [
+         "hash_chunk_1",
+         "hash_chunk_2",
+         ...
+       ],
+       "fullFileHash": "hash_for_whole_file"
+     }
+```
+
+A json schema document is defined in [schema.json](./docs/schema.json).
+
 ## Testing
 **Unit Tests:**
 ```bash
-zig build test
+zig build test --summary all
 ```
-
+![test.gif](./docs/tests.gif)
