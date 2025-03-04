@@ -22,6 +22,7 @@ This project will strengthen students' understanding of network programming, dis
 ### New `requestType` Field
 Students will use the `requestType` field in JSON messages to distinguish message types:
 - **`query`**: Sent by the client to request file information from servers.
+- **`upload`**: Send by the client to upload local file information to the server.
 - **`queryResponse`**: Sent by servers to respond with a list of available files and metadata.
 
 ---
@@ -72,6 +73,8 @@ Each server should:
 ```
 - **Client Display Format**: Number each file sequentially in the output to facilitate easy selection.
 
+---
+
 ## Learning Objectives
 
 By completing this project, students will:
@@ -83,6 +86,9 @@ By completing this project, students will:
 + Apply Structured Data Handling with JSON: Use JSON to organize and present structured file metadata, reinforcing data serialization and deserialization skills.
 
 + Create User-Friendly Output: Learn to format and display network data in a clear, user-oriented manner.
+
+
+---
 
 ## Sample Output
 

@@ -22,7 +22,7 @@
     });
   in {
     devShells.x86_64-linux.default = pkgs.mkShell {
-      packages = with pkgs; [zig zls vhs];
+      packages = with pkgs; [zig zls vhs harper];
     };
   };
 }
