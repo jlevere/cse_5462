@@ -20,7 +20,7 @@ Expand the server functionality developed in Project #3 to handle multiple clien
 
 To compile the code you have a few options, use the [development enviroment](#enviroment-setup), or [directly install](#direct-zig-install) the zig compiler.
 
-### Enviroment setup (HIGHLY RECOMENDED)
+### Environment setup (HIGHLY RECOMMENDED)
 
 To use the Nix flake-based development environment:
 ```bash
@@ -58,29 +58,42 @@ Compile with `zig build` or download pre-built binaries from [releases](https://
 
 ## Design
 
+While I slightly deviated from the design proposed in the [assignment](./ASSIGNMENT.md), I ensured that all functional and interoperability requirements were still met.
 
-This project was implmented with Data Oriented Design principles in mind.
+This project was implemented with **Data-Oriented Design** principles in mind, focusing on performance and efficient memory usage.
 
-The server uses a Multi Array List as an internal data structure.  This data structure stores seperate lists for each field of the struct of the data type it is built for. This allows both memory savings and very fast operations through cache usage improvements and the abilitry to use SIMD for some operations.
+### Internal Data Structure
 
-If we breakdown the most common operations of the file registry we get the following:
-- Contains hash
-- Retrive clients from hash
-- Add new client
-- Add new file
+The server uses a **Multi-Array List** as its core data structure. This structure organizes data by storing separate lists for each field of the struct it is designed for. This approach offers two key benefits:
+- **Memory efficiency**: It reduces the overhead by organizing data in a more compact way.
+- **Performance improvements**: The layout improves cache locality and allows us to take advantage of **SIMD** (Single Instruction, Multiple Data) for parallel processing of operations.
 
-In that order as well. If we look at these even more, in every case, we need to check if the registry contains a hash.  Every operation requires this.
+### Key Operations
 
-To help speed this up, we can use a Bloom Filter to preform negtive lookups, and a hashmap to map hashes to entries in our primary data structure, the multiarraylist.
+The most common operations in the file registry are:
+1. Checking if a hash is present in the registry (`contains hash`).
+2. Retrieving clients associated with a given hash (`retrieve clients from hash`).
+3. Adding a new client (`add new client`).
+4. Adding a new file (`add new file`).
 
-This provides constant time lookup and membership test system for hashes.
+Each of these operations starts with a check to see if the registry contains the hash, making this check the most frequent operation.
 
-This takes care of our first operation, "contains hash", and "retrive clients from hash".
+### Optimizing Hash Lookups
 
-When we create a new file, we can preallocate a few clients for it, since we assume there will be multiple clients per file. Clients are stored as std.net.Addess objects which are fairly small and stored in an arraylist anyway.
+To speed up hash lookups, we use a **Bloom Filter** for **negative lookups**. This prevents unnecessary lookups in the main data structure. Additionally, we use a **hashmap** to map hashes directly to entries in the main data structure, the Multi-Array List.
 
+This combination allows for:
+- **Constant time lookups** for checking if a hash exists.
+- **Efficient membership tests** for hashes.
 
-This helps optimize our most frequent operations.
+These optimizations efficiently handle the "contains hash" and "retrieve clients from hash" operations.
+
+### Handling New Files
+
+When a new file is added, we assume that it will be associated with multiple clients. To optimize for this, we pre-allocate a few client slots in advance. Clients are stored as `std.net.Address` objects, which are relatively small and already stored in an array list.
+
+This approach reduces overhead and further optimizes the most frequent operations, ensuring that we handle hash lookups and client retrieval efficiently.
+
 
 
 ### Workflow
