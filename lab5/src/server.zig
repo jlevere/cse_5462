@@ -5,13 +5,8 @@ const build_info = @import("build_info");
 const FileRegistry = @import("file_registry.zig").FileRegistry;
 
 pub const std_options: std.Options = .{
-    .log_level = .debug,
+    .log_level = .info,
 };
-
-comptime {
-    _ = @import("bloom_filter.zig");
-    _ = @import("file_registry.zig");
-}
 
 pub fn main() !void {
     var gpa_impl = std.heap.GeneralPurposeAllocator(.{}){};

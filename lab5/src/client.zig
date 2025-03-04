@@ -7,7 +7,7 @@ const build_info = @import("build_info");
 const json = std.json;
 
 pub const std_options: std.Options = .{
-    .log_level = .debug,
+    .log_level = .info,
 };
 
 pub fn main() !void {
