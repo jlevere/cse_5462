@@ -209,6 +209,23 @@ pub const FileRegistry = struct {
         }
         try writer.writeAll("\n]");
     }
+
+    pub fn printTable(self: *Self, writer: anytype) !void {
+        const slice = self.files.slice();
+
+        for (0..self.files.len) |i| {
+            try writer.print("{s:<20}{s:<}\n", .{ "filename", slice.items(.filename)[i] });
+            try writer.print("{s:<20}{s:<}\n", .{ "fileHash", slice.items(.fullFileHash)[i] });
+
+            for (slice.items(.clientIPs)[i].items) |addr| {
+                var buf: [64]u8 = undefined;
+                const ip_str = try std.fmt.bufPrint(&buf, "{}", .{addr});
+                try writer.print("{s:<20}{s:<}\n", .{ "", ip_str });
+            }
+            try writer.writeAll("\n");
+        }
+        try writer.writeAll("\n");
+    }
 };
 
 test "FileRegistry - basic functionality" {

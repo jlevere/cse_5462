@@ -1,16 +1,14 @@
 const std = @import("std");
 const clap = @import("clap");
 const UDPSocket = @import("sock.zig").UDPSocket;
-const parse = @import("parser.zig");
 const build_info = @import("build_info");
+const FileRegistry = @import("file_registry.zig").FileRegistry;
 
 pub const std_options: std.Options = .{
-    .log_level = .info,
+    .log_level = .debug,
 };
 
 comptime {
-    _ = @import("file_chunking.zig");
-    _ = @import("array_linked_list.zig");
     _ = @import("bloom_filter.zig");
     _ = @import("file_registry.zig");
 }
@@ -23,8 +21,8 @@ pub fn main() !void {
     const gpa = gpa_impl.allocator();
 
     const params = comptime clap.parseParamsComptime(
-        \\-h, --help                Display this help and exit
-        \\--version                 Display the current version
+        \\-h, --help               Display this help and exit
+        \\--version                Display the current version
         \\-i, --ip <str>           IP address to bind to (default: 0.0.0.0)
         \\-p, --port <u16>         Port number to bind to (required)
         \\-f, --format <str>       Output format: json, table (default: table)
@@ -77,6 +75,9 @@ pub fn main() !void {
     var bw = std.io.bufferedWriter(stdout_file);
     const stdout = bw.writer();
 
+    var registry = try FileRegistry.init(gpa);
+    defer registry.deinit();
+
     while (true) {
         const buf = try gpa.alloc(u8, 65535);
         defer gpa.free(buf);
@@ -94,6 +95,24 @@ pub fn main() !void {
             .json => try printJson(stdout, json_values.value),
             .table => try printTable(stdout, json_values.value),
         }
+
+        try stdout.print("\n", .{});
+        try bw.flush();
+
+        try stdout.print("updated regsitrystate: \n", .{});
+        try bw.flush();
+
+        try registry.registerFile(
+            json_values.value.object.get("filename").?.string,
+            json_values.value.object.get("fullFileHash").?.string,
+            recv_info.sender,
+        );
+
+        try stdout.print("\x1b[2J\x1b[H", .{}); // clear terminal
+        try bw.flush();
+
+        try registry.printTable(stdout);
+        try bw.flush();
 
         try stdout.print("\n", .{});
         try bw.flush();
