@@ -1,6 +1,7 @@
 .{
-    .name = "lab3",
+    .name = .lab5,
     .version = "0.0.0",
+    .fingerprint = 0x18d9fbb6c389b289,
 
     .dependencies = .{
         .clap = .{
