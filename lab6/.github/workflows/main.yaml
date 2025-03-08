@@ -28,7 +28,7 @@ jobs:
           token: ${{ secrets.ATTIC_TOKEN }}
 
       - name: Run zig fmt
-        run: nix develop --command zig fmt --check .
+        run: nix develop .#build --command zig fmt --check .
 
       - name: Run Tests
-        run: nix develop --command zig build test --summary all
+        run: nix develop .#build  --command zig build test --summary all

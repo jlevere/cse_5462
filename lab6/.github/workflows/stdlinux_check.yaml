@@ -16,12 +16,20 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v2
 
-      - uses: mlugg/setup-zig@v1
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
         with:
-          version: master
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Attic cache
+        uses: ryanccn/attic-action@v0
+        with:
+          endpoint: ${{ secrets.ATTIC_ENDPOINT }}
+          cache: ${{ secrets.ATTIC_CACHE }}
+          token: ${{ secrets.ATTIC_TOKEN }}
 
       - name: Build binaries
-        run: zig build -Dversion=1
+        run: nix develop .#build --command zig build -Dversion=1
 
       - name: Upload binaries
         uses: actions/upload-artifact@v4

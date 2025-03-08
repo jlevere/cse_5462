@@ -30,22 +30,8 @@ jobs:
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
           else
-            # For scheduled runs, generate version based on date
-            DATE=$(date +'%Y.%m.%d')
-            # Get the current highest version for today
-            git fetch --tags
-            CURRENT_VERSIONS=$(git tag -l "$DATE.*" | sort -V)
-            if [ -z "$CURRENT_VERSIONS" ]; then
-              # First release of the day
-              VERSION="$DATE.1"
-            else
-              # Increment the last version number
-              LAST_VERSION=$(echo "$CURRENT_VERSIONS" | tail -n1)
-              PATCH=$(echo "$LAST_VERSION" | rev | cut -d'.' -f1 | rev)
-              NEXT_PATCH=$((PATCH + 1))
-              VERSION="$DATE.$NEXT_PATCH"
-            fi
-            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            # For scheduled runs, just use 1.0.0
+            echo "version=1.0.0" >> "$GITHUB_OUTPUT"
           fi
       - name: Bump version and push tag
         uses: mathieudutour/github-tag-action@v6.2
@@ -80,13 +66,21 @@ jobs:
         with:
           ref: "${{ needs.create-tag.outputs.release-tag }}"
 
-      - uses: mlugg/setup-zig@v1
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
         with:
-          version: master
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Attic cache
+        uses: ryanccn/attic-action@v0
+        with:
+          endpoint: ${{ secrets.ATTIC_ENDPOINT }}
+          cache: ${{ secrets.ATTIC_CACHE }}
+          token: ${{ secrets.ATTIC_TOKEN }}
 
       - name: Build binaries
         run: |
-          zig build -Doptimize=ReleaseSafe -Dversion=${{ needs.create-tag.outputs.release-tag }}
+          nix develop .#build --command zig build -Doptimize=ReleaseSafe -Dversion=${{ needs.create-tag.outputs.release-tag }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
