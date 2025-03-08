@@ -3,6 +3,7 @@ const clap = @import("clap");
 const UDPSocket = @import("sock.zig").UDPSocket;
 const file = @import("file_chunking.zig");
 const build_info = @import("build_info");
+const FileRegistry = @import("file_registry.zig").FileRegistry;
 
 const json = std.json;
 
@@ -66,58 +67,90 @@ pub fn main() !void {
     };
     defer dir.close();
 
-    const cache_name = "CHUNKS";
-    var chunk_dir = try file.ChunkDir.init(gpa, dir, cache_name);
-
-    // Types of operations requested
-    const should_clear = res.args.clear != 0;
-    const should_rebuild = res.args.rebuild != 0;
-    const has_ip = res.args.ip != null;
-    const has_port = res.args.port != null;
+    var client = try Client.init(gpa, dir);
+    defer client.deinit();
 
     // Clear cache if requested
-    if (should_clear) {
-        if (!try chunk_dir.cacheExists()) return;
-        try chunk_dir.clearCache();
-        if (!should_rebuild and !has_ip) return; // Exit if only clearing was requested
+    if (res.args.clear != 0) {
+        try client.clearCache();
     }
 
     // Rebuild cache if requested or if it doesn't exist
-    if (should_rebuild or !try chunk_dir.cacheExists()) {
-        if (try chunk_dir.cacheExists()) {
-            try chunk_dir.clearCache();
-        }
-
-        try chunk_dir.createCacheDir();
-        try chunk_dir.buildCache();
-        if (!has_ip) return; // Exit if only rebuilding was requested
+    if (res.args.rebuild != 0 or !try client.cache.cacheExists()) {
+        try client.rebuildCache();
     }
 
     // If IP/port are provided, send the data
-    if (has_ip and has_port) {
-        const ip = res.args.ip.?;
-        const port = res.args.port.?;
-
-        var socket = try UDPSocket.init(true);
-        defer socket.deinit();
-
-        var cache_dir = try dir.openDir(cache_name, .{ .iterate = true });
-        defer cache_dir.close();
-
-        var iter = file.ChunkDir.Iterator.init(gpa, cache_dir);
-        defer iter.deinit();
-
-        var buf = std.ArrayList(u8).init(gpa);
-        defer buf.deinit();
-        const writer = buf.writer();
-
-        while (try iter.next()) |entry| {
-            try entry.serialize(writer);
-            try socket.sendTo(try std.net.Address.resolveIp(ip, port), buf.items);
-            buf.clearRetainingCapacity();
-        }
-    } else if (has_ip or has_port) {
+    if (res.args.ip != null and res.args.port != null) {
+        try client.uploadLocalFiles(try std.net.Address.parseIp(res.args.ip.?, res.args.port.?));
+    } else {
         std.log.err("Both IP and port are required for sending\n", .{});
         return;
     }
+
+    // data has been uploaded at this point, now we need to wait for updates from the server
+
 }
+
+const Client = struct {
+    const Self = @This();
+
+    const CACHENAME = "CHUNKS";
+
+    cache: file.ChunkDir,
+    socket: UDPSocket,
+
+    alloc: std.mem.Allocator,
+
+    pub fn init(
+        alloc: std.mem.Allocator,
+        file_dir: std.fs.Dir,
+    ) !Self {
+        return .{
+            .cache = try file.ChunkDir.init(alloc, file_dir, CACHENAME),
+            .socket = try UDPSocket.init(true),
+            .alloc = alloc,
+        };
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.socket.deinit();
+    }
+
+    pub fn rebuildCache(self: *Self) !void {
+        try self.clearCache();
+        try self.cache.buildCache();
+    }
+
+    pub fn clearCache(self: *Self) !void {
+        if (try self.cache.cacheExists()) {
+            try self.cache.clearCache();
+        }
+    }
+
+    pub fn uploadLocalFiles(self: *Self, addr: std.net.Address) !void {
+        errdefer |err| std.log.err("Uploading local files failed with err {}\n", err);
+
+        var dir = try self.cache.dir.openDir(
+            CACHENAME,
+            .{ .iterate = true },
+        );
+        defer dir.close();
+
+        var iter = file.ChunkDir.Iterator.init(self.alloc, dir);
+        defer iter.deinit();
+
+        var buf = std.ArrayList(u8).init(self.alloc);
+        defer buf.deinit();
+        const writer = buf.writer();
+
+        try writer.writeAll("{\"requestType\":\"upload\",\"files\":[");
+        while (try iter.next()) |entry| {
+            try entry.serialize(writer);
+            try writer.writeAll(",");
+        }
+        try writer.writeAll("]}");
+
+        try self.socket.sendTo(addr, buf.items);
+    }
+};
