@@ -73,6 +73,7 @@ pub fn main() !void {
     // Clear cache if requested
     if (res.args.clear != 0) {
         try client.clearCache();
+        return;
     }
 
     // Rebuild cache if requested or if it doesn't exist
@@ -83,7 +84,7 @@ pub fn main() !void {
     // If IP/port are provided, send the data
     if (res.args.ip != null and res.args.port != null) {
         try client.uploadLocalFiles(try std.net.Address.parseIp(res.args.ip.?, res.args.port.?));
-    } else {
+    } else if (res.args.ip != null or res.args.port != null) {
         std.log.err("Both IP and port are required for sending\n", .{});
         return;
     }
@@ -119,6 +120,7 @@ const Client = struct {
 
     pub fn rebuildCache(self: *Self) !void {
         try self.clearCache();
+        try self.cache.createCacheDir();
         try self.cache.buildCache();
     }
 
@@ -129,8 +131,6 @@ const Client = struct {
     }
 
     pub fn uploadLocalFiles(self: *Self, addr: std.net.Address) !void {
-        errdefer |err| std.log.err("Uploading local files failed with err {}\n", err);
-
         var dir = try self.cache.dir.openDir(
             CACHENAME,
             .{ .iterate = true },
