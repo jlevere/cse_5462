@@ -92,11 +92,6 @@ pub fn main() !void {
         );
         defer json_values.deinit();
 
-        switch (output_format) {
-            .json => try printJson(stdout, json_values.value),
-            .table => try printTable(stdout, json_values.value),
-        }
-
         try stdout.print("\n", .{});
         try bw.flush();
 
@@ -112,35 +107,13 @@ pub fn main() !void {
         try stdout.print("\x1b[2J\x1b[H", .{}); // clear terminal
         try bw.flush();
 
-        try registry.printTable(stdout);
+        switch (output_format) {
+            .json => try registry.serialize(stdout),
+            .table => try registry.printTable(stdout),
+        }
         try bw.flush();
 
         try stdout.print("\n", .{});
         try bw.flush();
-    }
-}
-
-pub fn printJson(writer: anytype, value: std.json.Value) !void {
-    try std.json.stringify(value, .{ .whitespace = .indent_1 }, writer);
-}
-
-/// Print simple json in a table format
-pub fn printTable(writer: anytype, value: std.json.Value) !void {
-    var iter = value.object.iterator();
-    while (iter.next()) |entry| {
-        switch (entry.value_ptr.*) {
-            .string => |str| try writer.print("{s:<20}{s:<}\n", .{ entry.key_ptr.*, str }),
-            .integer => |int| try writer.print("{s:<20}{d:<}\n", .{ entry.key_ptr.*, int }),
-            .float => |float| try writer.print("{s:<20}{:<}\n", .{ entry.key_ptr.*, float }),
-            .bool => |b| try writer.print("{s:<20}{s:<}\n", .{ entry.key_ptr.*, if (b) "true" else "false" }),
-            .null => try writer.print("{s:<20}{s:<}\n", .{ entry.key_ptr.*, "(null)" }),
-            .array => {
-                for (entry.value_ptr.array.items) |arr_item| {
-                    try writer.print("{s:<20}{s:<}\n", .{ "", arr_item.string });
-                }
-            },
-            .object => try writer.print("{s:<20}{s:<}\n", .{ entry.key_ptr.*, "(object)" }),
-            else => unreachable,
-        }
     }
 }
