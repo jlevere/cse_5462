@@ -4,6 +4,12 @@ const UDPSocket = @import("sock.zig").UDPSocket;
 const build_info = @import("build_info");
 const FileRegistry = @import("file_registry.zig").FileRegistry;
 
+comptime {
+    _ = @import("bloom_filter.zig");
+    _ = @import("file_chunking.zig");
+    _ = @import("file_registry.zig");
+}
+
 pub const std_options: std.Options = .{
     .log_level = .info,
 };
@@ -62,7 +68,7 @@ pub fn main() !void {
         return clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
     };
 
-    var socket = try UDPSocket.init();
+    var socket = try UDPSocket.init(true);
     defer socket.deinit();
     try socket.bind(try std.net.Address.resolveIp(ip, port));
 

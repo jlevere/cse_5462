@@ -21,11 +21,11 @@ pub const UDPSocket = struct {
 
     /// Creates a new UDP socket
     /// Caller must call `deinit()` to clean up resources
-    pub fn init() !Self {
+    pub fn init(block: bool) !Self {
         return Self{
             .socketfd = try std.posix.socket(
                 std.posix.AF.INET,
-                std.posix.SOCK.DGRAM,
+                if (!block) std.posix.SOCK.DGRAM | std.posix.SOCK.NONBLOCK else std.posix.SOCK.DGRAM,
                 std.posix.IPPROTO.UDP,
             ),
             .bound_addr = undefined,

@@ -98,7 +98,7 @@ pub fn main() !void {
         const ip = res.args.ip.?;
         const port = res.args.port.?;
 
-        var socket = try UDPSocket.init();
+        var socket = try UDPSocket.init(true);
         defer socket.deinit();
 
         var cache_dir = try dir.openDir(cache_name, .{ .iterate = true });

@@ -119,3 +119,21 @@ test "BloomFilter false positives" {
 
     try std.testing.expect(!bf.contains("fig"));
 }
+
+fn testOne(context: void, input: []const u8) anyerror!void {
+    _ = context;
+
+    var bf = BloomFilter(8192, 7, wyhash){};
+    bf.add(input);
+
+    try std.testing.expect(bf.contains(input));
+
+    bf.reset();
+
+    bf.add(input);
+    try std.testing.expect(bf.contains(input));
+}
+
+test "BloomFilter fuzz" {
+    try std.testing.fuzz({}, testOne, .{});
+}
