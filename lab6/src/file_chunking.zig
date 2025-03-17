@@ -49,14 +49,42 @@ pub const File = struct {
     }
 
     /// Serialize the file object into a serialized json string
-    pub fn serialize(self: Self, writer: anytype) !void {
-        try std.json.stringify(.{
-            .filename = self.filename,
-            .fileSize = self.fileSize,
-            .numberOfChunks = self.chunk_hashes.items.len,
-            .chunk_hashes = self.chunk_hashes.items,
-            .fullFileHash = self.fullFileHash,
-        }, .{}, writer);
+    pub fn serialize(self: Self, writer: anytype, extra_fields: ?std.StringHashMap([]const u8)) !void {
+        var jw = std.json.writeStream(
+            writer,
+            .{},
+        );
+
+        try jw.beginObject();
+
+        // add any extra fields first
+        if (extra_fields) |fields| {
+            var iter = fields.iterator();
+            while (iter.next()) |entry| {
+                try jw.objectField(entry.key_ptr.*);
+                try jw.write(entry.value_ptr.*);
+            }
+        }
+
+        // pretty inline, I am trying to use more comptime stuff like this
+        inline for (.{
+            .{ "filename", self.filename },
+            .{ "fileSize", self.fileSize },
+            .{ "numberOfChunks", self.chunk_hashes.items.len },
+            .{ "fullFileHash", self.fullFileHash },
+        }) |field| {
+            try jw.objectField(field[0]);
+            try jw.write(field[1]);
+        }
+
+        try jw.objectField("chunk_hashes");
+        try jw.beginArray();
+        for (self.chunk_hashes.items) |hash| {
+            try jw.write(hash);
+        }
+        try jw.endArray();
+
+        try jw.endObject();
     }
 
     pub const FromJson = struct {
@@ -148,10 +176,10 @@ test "File serialize" {
     var list = std.ArrayList(u8).init(std.testing.allocator);
     defer list.deinit();
 
-    try file.serialize(list.writer());
+    try file.serialize(list.writer(), null);
 
     const expected =
-        \\{"filename":"test.txt","fileSize":512,"numberOfChunks":2,"chunk_hashes":["a1b2c3d4","e5f6g7h8"],"fullFileHash":"1234567890abcdef"}
+        \\{"filename":"test.txt","fileSize":512,"numberOfChunks":2,"fullFileHash":"1234567890abcdef","chunk_hashes":["a1b2c3d4","e5f6g7h8"]}
     ;
 
     try std.testing.expectEqualStrings(expected, list.items);
@@ -175,7 +203,7 @@ test "File end-to-end serialization" {
 
     var json_buffer = std.ArrayList(u8).init(std.testing.allocator);
     defer json_buffer.deinit();
-    try original.serialize(json_buffer.writer());
+    try original.serialize(json_buffer.writer(), null);
 
     var deserialized = try File.FromJson.parse(std.testing.allocator, json_buffer.items);
     defer deserialized.deinit();
@@ -191,7 +219,7 @@ test "File end-to-end serialization" {
 
     var verification_buffer = std.ArrayList(u8).init(std.testing.allocator);
     defer verification_buffer.deinit();
-    try deserialized.serialize(verification_buffer.writer());
+    try deserialized.serialize(verification_buffer.writer(), null);
 
     try std.testing.expectEqualStrings(json_buffer.items, verification_buffer.items);
 }
@@ -318,12 +346,12 @@ pub const ChunkDir = struct {
             filename,
             (try thisfile.stat()).size,
             chunk_hashes.items,
-            &fullSha.finalResult(),
+            fullFileHash,
         );
         defer fileobj.deinit();
 
         var manafest = try cache.createFile(manifest_name, .{});
-        try fileobj.serialize(manafest.writer());
+        try fileobj.serialize(manafest.writer(), null);
         manafest.close();
     }
 
