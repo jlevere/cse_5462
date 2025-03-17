@@ -266,10 +266,6 @@ pub const ChunkDir = struct {
         );
         defer thisfile.close();
 
-        const fullFileHash_bytes = try hash_file(thisfile);
-        const fullFileHash = try std.fmt.allocPrint(self.alloc, "{s}", .{std.fmt.fmtSliceHexLower(&fullFileHash_bytes)});
-        defer self.alloc.free(fullFileHash);
-
         var cache = try self.dir.openDir(self.cache_name, .{ .iterate = true });
         defer cache.close();
 
@@ -283,25 +279,36 @@ pub const ChunkDir = struct {
         }
 
         var buf: [CHUNK_SIZE]u8 = undefined;
+        var fullSha = std.crypto.hash.sha2.Sha256.init(.{});
         while (true) {
             const n = try filereader.read(&buf);
             if (n == 0) break;
 
             var sha = std.crypto.hash.sha2.Sha256.init(.{});
             sha.update(buf[0..n]);
+            fullSha.update(buf[0..n]);
 
-            const chunkfilename = try std.fmt.allocPrint(self.alloc, "{s}", .{std.fmt.fmtSliceHexLower(&sha.finalResult())});
-            defer self.alloc.free(chunkfilename);
-
-            try chunk_hashes.append(try self.alloc.dupe(u8, chunkfilename));
+            const chunkfilename = try std.fmt.allocPrint(
+                self.alloc,
+                "{s}",
+                .{std.fmt.fmtSliceHexLower(&sha.finalResult())},
+            );
+            try chunk_hashes.append(chunkfilename);
 
             var chunk_file = try cache.createFile(chunkfilename, .{});
             defer chunk_file.close();
 
             try chunk_file.writeAll(buf[0..n]);
 
-            log.info("write chunk {s} of {d} bytes", .{ chunkfilename, n });
+            log.info("write chunk of {d} bytes", .{n});
         }
+
+        const fullFileHash = try std.fmt.allocPrint(
+            self.alloc,
+            "{s}",
+            .{std.fmt.fmtSliceHexLower(&fullSha.finalResult())},
+        );
+        defer self.alloc.free(fullFileHash);
 
         const manifest_name = try std.fmt.allocPrint(self.alloc, "{s}.json", .{fullFileHash});
         defer self.alloc.free(manifest_name);
@@ -309,18 +316,14 @@ pub const ChunkDir = struct {
         var fileobj = try File.init(
             self.alloc,
             filename,
-            100,
+            (try thisfile.stat()).size,
             chunk_hashes.items,
-            fullFileHash,
+            &fullSha.finalResult(),
         );
         defer fileobj.deinit();
 
-        var json_buffer = std.ArrayList(u8).init(self.alloc);
-        defer json_buffer.deinit();
-        try fileobj.serialize(json_buffer.writer());
-
         var manafest = try cache.createFile(manifest_name, .{});
-        try manafest.writeAll(json_buffer.items);
+        try fileobj.serialize(manafest.writer());
         manafest.close();
     }
 
