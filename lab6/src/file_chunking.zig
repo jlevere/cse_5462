@@ -300,7 +300,7 @@ pub const ChunkDir = struct {
 
             try chunk_file.writeAll(buf[0..n]);
 
-            log.info("write chunk of {d} bytes", .{n});
+            log.info("write chunk of {s:<20} {d} bytes", .{ filename, n });
         }
 
         const fullFileHash = try std.fmt.allocPrint(
@@ -389,84 +389,3 @@ pub const ChunkDir = struct {
         }
     };
 };
-
-pub fn hash_file(file: std.fs.File) ![std.crypto.hash.sha2.Sha256.digest_length]u8 {
-    var sha = std.crypto.hash.sha2.Sha256.init(.{});
-    const reader = file.reader();
-
-    var buf: [4096]u8 = undefined;
-    while (true) {
-        const n = try reader.read(&buf);
-        if (n == 0) break;
-        sha.update(buf[0..n]);
-    }
-    return sha.finalResult();
-}
-
-test "hash_file empty file" {
-    var tmp_dir = std.testing.tmpDir(.{});
-    defer tmp_dir.cleanup();
-
-    const file_path = try tmp_dir.dir.createFile(
-        "empty.txt",
-        .{ .read = true },
-    );
-    defer file_path.close();
-
-    const hash = try hash_file(file_path);
-
-    const empty_file_hash = [_]u8{
-        0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14,
-        0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
-        0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c,
-        0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
-    };
-
-    try std.testing.expectEqualSlices(u8, &empty_file_hash, &hash);
-}
-
-test "hash_file known content" {
-    var tmp_dir = std.testing.tmpDir(.{});
-    defer tmp_dir.cleanup();
-
-    const file = try tmp_dir.dir.createFile(
-        "test.txt",
-        .{ .read = true },
-    );
-    defer file.close();
-
-    const writer = file.writer();
-    try writer.writeAll("hi fren :3");
-    try file.seekTo(0);
-
-    const hash = try hash_file(file);
-
-    const known_hash = [_]u8{
-        0xa4, 0xb1, 0xc5, 0x80, 0x84, 0x5f, 0xe3, 0xad,
-        0x48, 0xae, 0xdb, 0xe8, 0x19, 0xf3, 0x61, 0xf0,
-        0x4b, 0x18, 0x9b, 0xc1, 0x70, 0xf2, 0x18, 0x49,
-        0x39, 0xf3, 0xef, 0xe7, 0x2a, 0xdf, 0x64, 0x3a,
-    };
-
-    try std.testing.expectEqualSlices(u8, &known_hash, &hash);
-}
-
-test "hash_file large file" {
-    var tmp_dir = std.testing.tmpDir(.{});
-    defer tmp_dir.cleanup();
-
-    const file = try tmp_dir.dir.createFile(
-        "large.txt",
-        .{ .read = true },
-    );
-    defer file.close();
-
-    const writer = file.writer();
-    var i: usize = 0;
-    while (i < 8192) : (i += 1) {
-        try writer.writeAll("A");
-    }
-    try file.seekTo(0);
-
-    _ = try hash_file(file);
-}
