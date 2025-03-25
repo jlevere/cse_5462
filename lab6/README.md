@@ -98,8 +98,8 @@ This approach reduces overhead and further optimizes the most frequent operation
 
 
 ### Workflow
-![workflow](./docs/lab5-flow.png)
-
+![workflow1](./docs/lab6-pt1.png)
+![workflow2](./docs/lab6-pt2.png)
 
 ### JSON Object Structure
 Each JSON object should contain:
@@ -131,13 +131,6 @@ A json schema document is defined in [schema.json](./docs/schema.json).
 zig build test --summary all
 ```
 ![test.gif](./docs/tests.gif)
-
-## Critiziems of project requirements
-
-- The json format is makes the project more more complicated than it should be. If you store the file metadata as a struct, and the serialize it, you still need to add the `requestType` field, but only two of the three message types. In the `queryResponse` type there is an array of file objects, which works very well.
-
-
-
 
 ## Notes
 
