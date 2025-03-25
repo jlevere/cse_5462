@@ -66,7 +66,6 @@ pub const UDPSocket = struct {
     ///   - sender: Source address of received data
     ///   - bytes_recv: Number of bytes received
     ///
-    /// Blocks until data is available
     pub fn recvFrom(self: Self, buf: []u8) !struct {
         sender: std.net.Address,
         bytes_recv: usize,
