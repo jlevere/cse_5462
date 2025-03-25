@@ -233,7 +233,7 @@ pub const FileRegistry = struct {
                 try writer.writeAll(",\n");
             }
         }
-        try writer.writeAll("\n]");
+        try writer.writeAll("\n]}");
     }
 
     pub fn printTable(self: *Self, writer: anytype) !void {
@@ -249,6 +249,15 @@ pub const FileRegistry = struct {
                 try writer.print("{s:<20}{s:<}\n", .{ "", ip_str });
             }
             try writer.writeAll("\n");
+        }
+        try writer.writeAll("\n");
+    }
+
+    pub fn printSimpleTable(self: *Self, writer: anytype) !void {
+        const slice = self.files.slice();
+        try writer.writeAll("\n==========================\n");
+        for (0.., slice.items(.filename), slice.items(.fullFileHash), slice.items(.fileSize)) |i, filename, hash, size| {
+            try writer.print("{d} {s} {d}bytes \n\t{s}\n", .{ i, filename, size, hash });
         }
         try writer.writeAll("\n");
     }
