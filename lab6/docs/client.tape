@@ -12,5 +12,12 @@ Sleep 5s
 Type "./client FILES/ --ip 224.0.0.1 --port 8011"
 Sleep 500ms
 Enter
+Type "query"
+Sleep 500ms
+Enter
+Sleep 500ms
+Type "ls"
+Sleep 500ms
+Enter
 Sleep 10s
 Ctrl+C
