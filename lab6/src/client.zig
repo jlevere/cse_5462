@@ -11,6 +11,8 @@ pub const std_options: std.Options = .{
     .log_level = .info,
 };
 
+const log = std.log.scoped(.client);
+
 pub fn main() !void {
     var gpa_impl = std.heap.GeneralPurposeAllocator(.{}){};
     defer if (gpa_impl.deinit() == .leak) {
@@ -83,7 +85,12 @@ pub fn main() !void {
 
     // If IP/port are provided, send the data
     if (res.args.ip != null and res.args.port != null) {
-        try client.uploadLocalFiles(try std.net.Address.parseIp(res.args.ip.?, res.args.port.?));
+        try client.socket.bind(try std.net.Address.parseIp(res.args.ip.?, 0));
+        try client.setServer(try std.net.Address.parseIp(res.args.ip.?, res.args.port.?));
+
+        try client.uploadLocalFiles();
+
+        try client.runEventLoop();
     } else if (res.args.ip != null or res.args.port != null) {
         std.log.err("Both IP and port are required for sending\n", .{});
         return;
@@ -101,6 +108,11 @@ const Client = struct {
     cache: file.ChunkDir,
     socket: UDPSocket,
 
+    server_addr: std.net.Address,
+    epoll: Epoll,
+
+    files: FileRegistry,
+
     alloc: std.mem.Allocator,
 
     pub fn init(
@@ -109,13 +121,148 @@ const Client = struct {
     ) !Self {
         return .{
             .cache = try file.ChunkDir.init(alloc, file_dir, CACHENAME),
-            .socket = try UDPSocket.init(true),
+            .socket = try UDPSocket.init(false),
+            .epoll = try Epoll.init(),
+            .files = try FileRegistry.init(alloc),
+            .server_addr = undefined,
             .alloc = alloc,
         };
     }
 
     pub fn deinit(self: *Self) void {
         self.socket.deinit();
+        self.epoll.deinit();
+        self.files.deinit();
+    }
+
+    pub fn runEventLoop(self: *Self) !void {
+        try self.epoll.addFd(self.socket.socketfd, std.os.linux.EPOLL.IN);
+        try self.epoll.addFd(std.io.getStdIn().handle, std.os.linux.EPOLL.IN);
+
+        while (true) {
+            const num_events = try self.epoll.wait();
+
+            for (0..num_events) |i| {
+                const current_fd = self.epoll.events[i].data.fd;
+
+                if (current_fd == self.socket.socketfd) {
+                    try self.handleSocketEvent();
+                } else if (current_fd == std.io.getStdIn().handle) {
+                    try self.handleStdinEvent();
+                }
+            }
+        }
+    }
+
+    pub fn handleSocketEvent(self: *Self) !void {
+        var buf = try self.alloc.alloc(u8, 65535);
+        defer self.alloc.free(buf);
+
+        const recv_info = self.socket.recvFrom(buf) catch |err| {
+            switch (err) {
+                error.WouldBlock => return,
+                else => return err,
+            }
+        };
+
+        var json_values = std.json.parseFromSlice(
+            std.json.Value,
+            self.alloc,
+            buf[0..recv_info.bytes_recv],
+            .{ .allocate = .alloc_always },
+        ) catch |parse_err| {
+            log.err("Unable to parse JSON: {any}\nMessage: {s}", .{
+                parse_err,
+                buf[0..recv_info.bytes_recv],
+            });
+            return;
+        };
+        defer json_values.deinit();
+
+        const Commands = enum { upload, query, queryResponse, notfound };
+        const request_type = (json_values.value.object.get("requestType") orelse
+            std.json.Value{ .string = "notfound" }).string;
+        const case = std.meta.stringToEnum(Commands, request_type) orelse Commands.notfound;
+
+        switch (case) {
+            .upload => {
+                std.debug.print("got upload msg from {}\n", .{recv_info.sender});
+            },
+            .query => {
+                std.debug.print("got query msg from {}\n", .{recv_info.sender});
+            },
+            .queryResponse => {
+                try self.processQueryResponse(&json_values.value, recv_info.sender);
+            },
+            .notfound => {
+                std.debug.print("cmd not found, got {s} from {}\n", .{ buf[0..recv_info.bytes_recv], recv_info.sender });
+            },
+        }
+    }
+
+    pub fn handleStdinEvent(self: *Self) !void {
+        var stdin_buffer: [1024]u8 = undefined;
+        const stdin = std.io.getStdIn().reader();
+
+        const line = (try stdin.readUntilDelimiterOrEof(&stdin_buffer, '\n')) orelse return;
+        const trimmed_line = std.mem.trim(u8, line, " \t\r\n");
+        var command_iter = std.mem.splitScalar(u8, trimmed_line, ' ');
+        const command_str = command_iter.first();
+
+        const Commands = enum { ls, query, notfound };
+
+        const case = std.meta.stringToEnum(Commands, command_str) orelse Commands.notfound;
+        switch (case) {
+            .ls => {
+                try self.displayFiles();
+            },
+            .query => {
+                try self.requestRemoteRegistry();
+            },
+            .notfound => {
+                std.debug.print("notfound\n", .{});
+            },
+        }
+    }
+
+    fn processQueryResponse(self: *Self, root: *std.json.Value, sender: std.net.Address) !void {
+        const files = root.object.get("files") orelse {
+            log.warn("queryResponse missing files array", .{});
+            return;
+        };
+
+        switch (files) {
+            .array => |items| {
+                for (items.items) |item| {
+                    const thisfile = item.object;
+
+                    const filename = (thisfile.get("filename") orelse continue).string;
+                    const size = (thisfile.get("fileSize") orelse continue).integer;
+                    const hash = (thisfile.get("fullFileHash") orelse continue).string;
+
+                    if (size < 0) continue;
+
+                    self.files.registerFile(
+                        filename,
+                        @intCast(size),
+                        hash,
+                        sender,
+                    ) catch |err| {
+                        log.warn("Failed to register {s}: {s}", .{ filename, @errorName(err) });
+                    };
+                }
+            },
+            else => {
+                log.warn("queryResponse contains non-array files field", .{});
+                return;
+            },
+        }
+    }
+
+    pub fn displayFiles(self: *Self) !void {
+        const stdout = std.io.getStdOut().writer();
+        try stdout.print("\n\x1B[2J\x1B[H", .{}); // Clear screen
+        try self.files.printSimpleTable(stdout);
     }
 
     pub fn rebuildCache(self: *Self) !void {
@@ -130,7 +277,15 @@ const Client = struct {
         }
     }
 
-    pub fn uploadLocalFiles(self: *Self, addr: std.net.Address) !void {
+    pub fn requestRemoteRegistry(self: *Self) !void {
+        try self.socket.sendTo(self.server_addr, "{\"requestType\": \"query\"}");
+    }
+
+    pub fn setServer(self: *Self, addr: std.net.Address) !void {
+        self.server_addr = addr;
+    }
+
+    pub fn uploadLocalFiles(self: *Self) !void {
         var dir = try self.cache.dir.openDir(
             CACHENAME,
             .{ .iterate = true },
@@ -144,13 +299,43 @@ const Client = struct {
         defer buf.deinit();
         const writer = buf.writer();
 
-        try writer.writeAll("{\"requestType\":\"upload\",\"files\":[");
-        while (try iter.next()) |entry| {
-            try entry.serialize(writer);
-            try writer.writeAll(",");
-        }
-        try writer.writeAll("]}");
+        var extra_fields = std.StringHashMap([]const u8).init(self.alloc);
+        defer extra_fields.deinit();
+        try extra_fields.put("requestType", "upload");
 
-        try self.socket.sendTo(addr, buf.items);
+        while (try iter.next()) |entry| {
+            try entry.serialize(writer, extra_fields);
+            try self.socket.sendTo(self.server_addr, buf.items);
+            buf.clearRetainingCapacity();
+        }
+    }
+};
+
+pub const Epoll = struct {
+    fd: i32,
+    events: [128]std.os.linux.epoll_event,
+
+    pub fn init() !Epoll {
+        const epfd = try std.posix.epoll_create1(std.os.linux.EPOLL.CLOEXEC);
+        return .{
+            .fd = epfd,
+            .events = undefined,
+        };
+    }
+
+    pub fn deinit(self: *Epoll) void {
+        std.posix.close(self.fd);
+    }
+
+    pub fn addFd(self: *Epoll, fd: i32, events: u32) !void {
+        var ev = std.os.linux.epoll_event{
+            .events = events,
+            .data = .{ .fd = fd },
+        };
+        try std.posix.epoll_ctl(self.fd, std.os.linux.EPOLL.CTL_ADD, fd, &ev);
+    }
+
+    pub fn wait(self: *Epoll) !usize {
+        return std.posix.epoll_wait(self.fd, &self.events, -1);
     }
 };

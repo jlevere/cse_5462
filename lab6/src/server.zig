@@ -11,7 +11,7 @@ comptime {
 }
 
 pub const std_options: std.Options = .{
-    .log_level = .debug,
+    .log_level = .info,
 };
 
 const log = std.log.scoped(.server);
