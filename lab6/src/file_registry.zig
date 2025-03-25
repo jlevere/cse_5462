@@ -31,6 +31,7 @@ pub const FileRegistry = struct {
     pub const FileData = struct {
         filename: []const u8,
         fullFileHash: []const u8,
+        fileSize: i64,
         clientIPs: std.ArrayList(std.net.Address),
     };
 
@@ -68,7 +69,7 @@ pub const FileRegistry = struct {
     pub fn registerClient() void {}
 
     /// Regster a new file
-    pub fn registerFile(self: *Self, filename: []const u8, hash: []const u8, client_addr: std.net.Address) !void {
+    pub fn registerFile(self: *Self, filename: []const u8, fileSize: i64, hash: []const u8, client_addr: std.net.Address) !void {
 
         // If the file already exists
         if (self.filter.contains(hash)) {
@@ -99,6 +100,7 @@ pub const FileRegistry = struct {
         self.files.set(index, .{
             .filename = try self.alloc.dupe(u8, filename),
             .fullFileHash = my_hash,
+            .fileSize = fileSize,
             .clientIPs = client_array,
         });
 
@@ -199,9 +201,33 @@ pub const FileRegistry = struct {
             const file = FileData{
                 .filename = slice.items(.filename)[i],
                 .fullFileHash = slice.items(.fullFileHash)[i],
+                .fileSize = slice.items(.fileSize)[i],
                 .clientIPs = slice.items(.clientIPs)[i],
             };
             try self.serializeFile(file, writer);
+
+            if (i < self.files.len - 1) {
+                try writer.writeAll(",\n");
+            }
+        }
+        try writer.writeAll("\n]");
+    }
+
+    pub fn queryResponse(self: *Self, writer: anytype) !void {
+        try writer.writeAll("{\"requestType\": \"queryResponse\", \"files\":[\n");
+
+        const slice = self.files.slice();
+
+        for (0..self.files.len) |i| {
+            try std.json.stringify(
+                .{
+                    .filename = slice.items(.filename)[i],
+                    .fullFileHash = slice.items(.fullFileHash)[i],
+                    .fileSize = slice.items(.fileSize)[i],
+                },
+                .{},
+                writer,
+            );
 
             if (i < self.files.len - 1) {
                 try writer.writeAll(",\n");
@@ -239,9 +265,9 @@ test "FileRegistry - basic functionality" {
     const client_addr1 = try std.net.Address.parseIp4("127.0.0.1", 10423);
     const client_addr2 = try std.net.Address.parseIp4("192.168.1.10", 8080);
 
-    try reg.registerFile(filename1, hash1, client_addr1);
-    try reg.registerFile(filename1, hash1, client_addr2);
-    try reg.registerFile(filename2, hash2, client_addr1);
+    try reg.registerFile(filename1, 10, hash1, client_addr1);
+    try reg.registerFile(filename1, 10, hash1, client_addr2);
+    try reg.registerFile(filename2, 10, hash2, client_addr1);
 
     const hash1clients = try reg.search(hash1);
     defer reg.alloc.free(hash1clients);
@@ -268,8 +294,8 @@ test "FileRegistry - duplicate registration" {
     const hash = "testhash000000000000000000000";
     const client_addr = try std.net.Address.parseIp4("127.0.0.1", 10423);
 
-    try reg.registerFile(filename, hash, client_addr);
-    try reg.registerFile(filename, hash, client_addr);
+    try reg.registerFile(filename, 10, hash, client_addr);
+    try reg.registerFile(filename, 10, hash, client_addr);
 
     const clients = try reg.search(hash);
     defer reg.alloc.free(clients);
@@ -290,7 +316,7 @@ test "FileRegistry - serialization" {
     const hash = "testhash000000000000000000000";
     const client_addr = try std.net.Address.parseIp4("127.0.0.1", 10423);
 
-    try reg.registerFile(filename, hash, client_addr);
+    try reg.registerFile(filename, 10, hash, client_addr);
 
     // Serialize to buf instead of stdout
     var buffer = std.ArrayList(u8).init(std.testing.allocator);

@@ -11,8 +11,10 @@ comptime {
 }
 
 pub const std_options: std.Options = .{
-    .log_level = .info,
+    .log_level = .debug,
 };
+
+const log = std.log.scoped(.server);
 
 pub fn main() !void {
     var gpa_impl = std.heap.GeneralPurposeAllocator(.{}){};
@@ -84,36 +86,67 @@ pub fn main() !void {
         defer gpa.free(buf);
 
         const recv_info = try socket.recvFrom(buf);
-        const json_values = try std.json.parseFromSlice(
+        const json_values = std.json.parseFromSlice(
             std.json.Value,
             gpa,
             buf[0..recv_info.bytes_recv],
             .{ .allocate = .alloc_always },
-        );
+        ) catch |err| {
+            log.err("unable to parse json with error: {any}\nThe message in question: \n{s}\n", .{ err, buf[0..recv_info.bytes_recv] });
+            continue;
+        };
         defer json_values.deinit();
 
-        try stdout.print("\n", .{});
-        try bw.flush();
+        const Commands = enum { upload, query, queryResponse, notfound };
+        const request_type = (json_values.value.object.get("requestType") orelse std.json.Value{ .string = "notfound" }).string;
+        const case = std.meta.stringToEnum(Commands, request_type) orelse Commands.notfound;
+        switch (case) {
+            .upload => {
+                try stdout.print("\n", .{});
+                try stdout.print("updated regsitrystate: \n", .{});
 
-        try stdout.print("updated regsitrystate: \n", .{});
-        try bw.flush();
+                try registry.registerFile(
+                    json_values.value.object.get("filename").?.string,
+                    json_values.value.object.get("fileSize").?.integer,
+                    json_values.value.object.get("fullFileHash").?.string,
 
-        try registry.registerFile(
-            json_values.value.object.get("filename").?.string,
-            json_values.value.object.get("fullFileHash").?.string,
-            recv_info.sender,
-        );
+                    recv_info.sender,
+                );
 
-        try stdout.print("\x1b[2J\x1b[H", .{}); // clear terminal
-        try bw.flush();
+                try stdout.print("\x1b[2J\x1b[H\x1b[3J", .{}); // clear terminal
+                try bw.flush();
 
-        switch (output_format) {
-            .json => try registry.serialize(stdout),
-            .table => try registry.printTable(stdout),
+                switch (output_format) {
+                    .json => try registry.serialize(stdout),
+                    .table => try registry.printTable(stdout),
+                }
+
+                try stdout.print("\n", .{});
+            },
+            .query => {
+                try stdout.print("got a query from {}\n", .{recv_info.sender});
+
+                var sendbuf = std.ArrayList(u8).init(gpa);
+                defer sendbuf.deinit();
+
+                try registry.queryResponse(sendbuf.writer());
+
+                try socket.sendTo(recv_info.sender, sendbuf.items);
+            },
+            .queryResponse => {
+                try stdout.print("got a query response\n", .{});
+            },
+            .notfound => {
+                try stdout.print("got malformed json: ", .{});
+                try std.json.stringify(
+                    json_values.value,
+                    .{ .whitespace = .indent_tab },
+                    stdout,
+                );
+
+                log.debug("got malformed json, does not contain valid request Type", .{});
+            },
         }
-        try bw.flush();
-
-        try stdout.print("\n", .{});
         try bw.flush();
     }
 }
