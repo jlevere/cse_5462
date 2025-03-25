@@ -109,9 +109,11 @@ pub const UDPSocket = struct {
             &std.mem.toBytes(@as(c_int, 1)),
         );
 
+        const any = try std.net.Address.parseIp("0.0.0.0", addr.getPort());
+
         try std.posix.bind(
             self.socketfd,
-            &addr.any,
+            &any.any,
             addr.getOsSockLen(),
         );
 

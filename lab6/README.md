@@ -131,3 +131,19 @@ A json schema document is defined in [schema.json](./docs/schema.json).
 zig build test --summary all
 ```
 ![test.gif](./docs/tests.gif)
+
+## Critiziems of project requirements
+
+- The json format is makes the project more more complicated than it should be. If you store the file metadata as a struct, and the serialize it, you still need to add the `requestType` field, but only two of the three message types. In the `queryResponse` type there is an array of file objects, which works very well.
+
+
+
+
+## Notes
+
+This has taken me forever to really understand multicast in this application, omg.
+
+| Role   | Bind Address     | Send To                          | Join Multicast?               | Receive From             |
+|--------|-----------------|---------------------------------|------------------------------|--------------------------|
+| **Server** | `0.0.0.0:8011` | Unicast (Client IP)            | Yes (`IP_ADD_MEMBERSHIP`)  | Multicast (`239.1.1.1`)  |
+| **Client** | `0.0.0.0:<rand>` | Multicast (`239.1.1.1:8011`)  | No                         | Unicast (Server IP)      |
