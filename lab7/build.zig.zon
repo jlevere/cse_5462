@@ -1,0 +1,21 @@
+.{
+    .name = .lab6,
+    .version = "0.0.0",
+    .fingerprint = 0x81d0aa0cf9c04688,
+
+    .dependencies = .{
+        .clap = .{
+            .url = "git+https://github.com/Hejsil/zig-clap#068c38f89814079635692c7d0be9f58508c86173",
+            .hash = "1220ff14a53e9a54311c9b0e665afeda2c82cfd6f57e7e1b90768bf13b85f9f29cd0",
+        },
+        .vaxis = .{
+            .url = "git+https://github.com/rockorager/libvaxis/#5b48d2c40c994363f87765fe9737d57c263275a4",
+            .hash = "vaxis-0.1.0-BWNV_BzyCADK2dn8dd4IAD2HjdgAFw34iRiNMX00-14g",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

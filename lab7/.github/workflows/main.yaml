@@ -1,0 +1,34 @@
+name: Main code fmt and test
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/*"
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@main
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Attic cache
+        uses: ryanccn/attic-action@v0
+        with:
+          endpoint: ${{ secrets.ATTIC_ENDPOINT }}
+          cache: ${{ secrets.ATTIC_CACHE }}
+          token: ${{ secrets.ATTIC_TOKEN }}
+
+      - name: Run zig fmt
+        run: nix develop .#build --command zig fmt --check .
+
+      - name: Run Tests
+        run: nix develop .#build  --command zig build test --summary all
