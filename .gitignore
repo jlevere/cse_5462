@@ -1,3 +1,4 @@
 *.docx
 .zig-cache
 zig-out/
+FILES
