@@ -156,7 +156,7 @@ pub const FileRegistry = struct {
                 client_list.items.len,
             );
             try results.appendSlice(client_list.items);
-            return results.toOwnedSlice();
+            return try results.toOwnedSlice();
         }
 
         // the bloomfilter can make mistakes, so if it isnt in the map
@@ -194,7 +194,7 @@ pub const FileRegistry = struct {
     pub fn getHashIdx(self: *Self, idx: usize, alloc: std.mem.Allocator) !?[]const u8 {
         const slice = self.files.slice();
 
-        if (idx > slice.items(.fullFileHash).len) return null;
+        if (idx >= slice.items(.fullFileHash).len) return null;
 
         return try alloc.dupe(u8, slice.items(.fullFileHash)[idx]);
     }
@@ -382,16 +382,20 @@ test "FileRegistry - basic functionality" {
     try reg.registerFile(filename1, 10, hash1, client_addr2, null);
     try reg.registerFile(filename2, 10, hash2, client_addr1, null);
 
-    const hash1clients = try reg.search(hash1);
-    defer reg.alloc.free(hash1clients);
+    const hash1clients = try reg.getClients(hash1);
+    defer if (hash1clients) |hash| reg.alloc.free(hash);
 
-    try std.testing.expectEqual(hash1clients.len, 2);
-    try std.testing.expectEqual(hash1clients[0].getPort(), client_addr1.getPort());
-    try std.testing.expectEqual(hash1clients[1].getPort(), client_addr2.getPort());
+    try std.testing.expectEqual(hash1clients.?.len, 2);
+    try std.testing.expectEqual(hash1clients.?[0].getPort(), client_addr1.getPort());
+    try std.testing.expectEqual(hash1clients.?[1].getPort(), client_addr2.getPort());
 
-    const nonexistent = try reg.search("nonexistenthash00000000000000");
-    defer reg.alloc.free(nonexistent);
-    try std.testing.expectEqual(nonexistent.len, 0);
+    const nonexistent = try reg.getClients("nonexistenthash00000000000000");
+    defer if (nonexistent) |hash| reg.alloc.free(hash);
+
+    if (nonexistent) |_| {
+        try std.testing.expect(false); // if this fails then it returned a file
+        unreachable;
+    }
 
     const stats = reg.getStats();
     try std.testing.expectEqual(stats.fileCount, 2);
@@ -410,7 +414,10 @@ test "FileRegistry - duplicate registration" {
     try reg.registerFile(filename, 10, hash, client_addr, null);
     try reg.registerFile(filename, 10, hash, client_addr, null);
 
-    const clients = try reg.search(hash);
+    const clients = try reg.getClients(hash) orelse {
+        try std.testing.expect(false);
+        unreachable;
+    };
     defer reg.alloc.free(clients);
 
     try std.testing.expectEqual(clients.len, 1);
