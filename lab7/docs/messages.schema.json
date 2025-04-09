@@ -1,0 +1,189 @@
+{
+  "$defs": {
+    "Chunk": {
+      "type": "object",
+      "properties": {
+        "chunkName": {
+          "type": "string"
+        },
+        "chunkSize": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "chunkName",
+        "chunkSize"
+      ]
+    },
+    "File": {
+      "type": "object",
+      "properties": {
+        "filename": {
+          "type": "string"
+        },
+        "fullFilehash": {
+          "type": "string"
+        },
+        "fileSize": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "numberOfChunks": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "chunk_hashes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Chunk"
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "filename",
+        "fullFilehash",
+        "fileSize",
+        "numberOfChunks",
+        "chunk_hashes"
+      ]
+    },
+    "QueryResponseFile": {
+      "type": "object",
+      "properties": {
+        "filename": {
+          "type": "string"
+        },
+        "fullFilehash": {
+          "type": "string"
+        },
+        "fileSize": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "numberOfPeers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "numberOfChunks": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "chunk_hashes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Chunk"
+          },
+          "minItems": 1
+        },
+        "IPInfo": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "IP": {
+                "type": "string"
+              },
+              "Port": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "IP",
+              "Port"
+            ]
+          }
+        }
+      },
+      "required": [
+        "filename",
+        "fullFilehash",
+        "fileSize",
+        "numberOfPeers",
+        "numberOfChunks",
+        "chunk_hashes",
+        "IPInfo"
+      ]
+    }
+  },
+  "properties": {
+    "requestType": {
+      "type": "string",
+      "enum": [
+        "upload",
+        "query",
+        "queryResponse",
+        "getChunk"
+      ]
+    },
+    "upload": {
+      "type": "object",
+      "properties": {
+        "filename": {
+          "type": "string"
+        },
+        "fullFilehash": {
+          "type": "string"
+        },
+        "fileSize": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "numberOfChunks": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "chunk_hashes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Chunk"
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "filename",
+        "fullFilehash",
+        "fileSize",
+        "numberOfChunks",
+        "chunk_hashes"
+      ]
+    },
+    "query": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    },
+    "queryResponse": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/QueryResponseFile"
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "files"
+      ]
+    },
+    "getChunk": {
+      "type": "object",
+      "properties": {
+        "chunkName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "chunkName"
+      ]
+    }
+  },
+  "required": [
+    "requestType"
+  ]
+}
