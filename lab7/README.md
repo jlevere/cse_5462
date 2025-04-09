@@ -9,7 +9,7 @@ This project implements a distributed file retrieval system where clients direct
 - Assignment [details](ASSIGNMENT.md)
 - [Getting Started](#getting-started)
 - [Design](#design)
-- [Testing](#testing) [![Main code fmt and test](https://github.com/CSE-5462-OSU-Spring2025/lab6-jLevere/actions/workflows/main.yaml/badge.svg)](https://github.com/CSE-5462-OSU-Spring2025/lab6-jLevere/actions/workflows/main.yaml)
+- [Testing](#testing) [![Main code fmt and test](https://github.com/CSE-5462-OSU-Spring2025/lab7-jLevere/actions/workflows/main.yaml/badge.svg)](https://github.com/CSE-5462-OSU-Spring2025/lab7-jLevere/actions/workflows/main.yaml)
 
 ## Getting Started
 
@@ -33,14 +33,14 @@ To learn more about how awesome nix is, see [how-nix-works](https://nixos.org/gu
 For MacOS (via Homebrew):
 
 ```bash
-brew install zig  # v0.13.0 (0.14.0-dev.2851+b074fb7dd recommended)
+brew install zig  # v0.14.0
 ```
 
 Other systems: [Download binaries](https://ziglang.org/learn/getting-started/) or check [supported package managers](https://github.com/ziglang/zig/wiki/Install-Zig-from-a-Package-Manager).
 
 ### Compilation & Usage
 
-Compile with `zig build` or download pre-built binaries from [releases](https://github.com/CSE-5462-OSU-Spring2025/lab2-jLevere/releases/latest/).
+Compile with `zig build` or download pre-built binaries from [releases](https://github.com/CSE-5462-OSU-Spring2025/lab7-jLevere/releases/latest/).
 
 ### Usage
 
@@ -60,8 +60,8 @@ Compile with `zig build` or download pre-built binaries from [releases](https://
 
 ### Workflow
 
-![workflow1](./docs/lab6-pt1.png)
-![workflow2](./docs/lab6-pt2.png)
+![workflow1](./docs/lab7-pt1.png)
+![workflow2](./docs/lab7-pt2.png)
 
 ### JSON Object Structure
 
@@ -83,3 +83,11 @@ This has taken me forever to really understand multicast in this application, om
 | ---------- | ---------------- | ---------------------------- | ------------------------- | ----------------------- |
 | **Server** | `0.0.0.0:8011`   | Unicast (Client IP)          | Yes (`IP_ADD_MEMBERSHIP`) | Multicast (`239.1.1.1`) |
 | **Client** | `0.0.0.0:<rand>` | Multicast (`239.1.1.1:8011`) | No                        | Unicast (Server IP)     |
+
+### Notes
+
+So, we have some new data that we need now, nesessitating a modification/rewrite of everything from the ground up.
+
+We need to store and send up the chunk size for each chunk, in addition to the file size.
+
+And also ip info for clients needs to be transfered in an array of objects, which is somewhat awkward in zig. Adidtionally there is a bug in the fixed buffer printer which is used to format ip addreses into strings, which made it nessisary to rewrite this into my own code.
