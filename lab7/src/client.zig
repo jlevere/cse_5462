@@ -83,21 +83,24 @@ pub fn main() !void {
         try client.rebuildCache();
     }
 
-    // If IP/port are provided, send the data
-    if (res.args.ip != null and res.args.port != null) {
-        try client.socket.bind(try std.net.Address.parseIp(res.args.ip.?, 0));
-        try client.setServer(try std.net.Address.parseIp(res.args.ip.?, res.args.port.?));
+    // not a network command
+    if (res.args.ip == null and res.args.port == null) {
+        return;
+    }
 
-        try client.uploadLocalFiles();
-
-        try client.runEventLoop();
-    } else if (res.args.ip != null or res.args.port != null) {
+    if (res.args.ip == null or res.args.port == null) {
         std.log.err("Both IP and port are required for sending\n", .{});
         return;
     }
 
-    // data has been uploaded at this point, now we need to wait for updates from the server
+    // Buisness logic
 
+    try client.socket.bind(try std.net.Address.parseIp(res.args.ip.?, 0));
+    try client.setServer(try std.net.Address.parseIp(res.args.ip.?, res.args.port.?));
+
+    try client.uploadLocalFiles();
+
+    try client.runEventLoop();
 }
 
 const Client = struct {
