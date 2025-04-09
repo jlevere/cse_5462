@@ -6,17 +6,22 @@ pub const File = struct {
     const Self = @This();
     const Allocator = std.mem.Allocator;
 
+    pub const ChunkInfo = struct {
+        chunkName: []const u8,
+        chunkSize: i64,
+    };
+
     alloc: Allocator,
     filename: []const u8,
     fileSize: usize,
-    chunk_hashes: std.ArrayList([]const u8),
+    chunk_hashes: std.ArrayList(ChunkInfo),
     fullFileHash: []const u8,
 
     pub fn init(
         alloc: Allocator,
         filename: []const u8,
         fileSize: usize,
-        chunk_hashes: []const []const u8,
+        chunk_hashes: []ChunkInfo,
         fullFileHash: []const u8,
     ) !Self {
         var self: File = .{
@@ -28,11 +33,14 @@ pub const File = struct {
         };
         errdefer self.deinit();
 
-        self.chunk_hashes = std.ArrayList([]const u8).init(alloc);
+        self.chunk_hashes = std.ArrayList(ChunkInfo).init(alloc);
         try self.chunk_hashes.ensureTotalCapacity(chunk_hashes.len);
 
-        for (chunk_hashes) |hash| {
-            self.chunk_hashes.appendAssumeCapacity(try alloc.dupe(u8, hash));
+        for (chunk_hashes) |chunk| {
+            self.chunk_hashes.appendAssumeCapacity(.{
+                .chunkName = try alloc.dupe(u8, chunk.chunkName),
+                .chunkSize = chunk.chunkSize,
+            });
         }
 
         return self;
@@ -42,8 +50,8 @@ pub const File = struct {
         self.alloc.free(self.filename);
         self.alloc.free(self.fullFileHash);
 
-        for (self.chunk_hashes.items) |hash| {
-            self.alloc.free(hash);
+        for (self.chunk_hashes.items) |chunk| {
+            self.alloc.free(chunk.chunkName);
         }
         self.chunk_hashes.deinit();
     }
@@ -66,7 +74,6 @@ pub const File = struct {
             }
         }
 
-        // pretty inline, I am trying to use more comptime stuff like this
         inline for (.{
             .{ "filename", self.filename },
             .{ "fileSize", self.fileSize },
@@ -80,7 +87,14 @@ pub const File = struct {
         try jw.objectField("chunk_hashes");
         try jw.beginArray();
         for (self.chunk_hashes.items) |hash| {
-            try jw.write(hash);
+            try jw.beginObject();
+
+            try jw.objectField("chunkName");
+            try jw.write(hash.chunkName);
+
+            try jw.objectField("chunkSize");
+            try jw.write(hash.chunkSize);
+            try jw.endObject();
         }
         try jw.endArray();
 
@@ -94,7 +108,7 @@ pub const File = struct {
                     filename: []const u8,
                     fileSize: usize,
                     numberOfChunks: usize,
-                    chunk_hashes: [][]const u8,
+                    chunk_hashes: []ChunkInfo,
                     fullFileHash: []const u8,
                 },
                 alloc,
@@ -115,12 +129,10 @@ pub const File = struct {
 };
 
 test "File deserialize" {
-    var chunk_hashes = std.ArrayList([]const u8).init(std.testing.allocator);
+    var chunk_hashes = std.ArrayList(File.ChunkInfo).init(std.testing.allocator);
     defer chunk_hashes.deinit();
-    try chunk_hashes.append("a1b2c3d4");
-    try chunk_hashes.append("e5f6g7h8");
-    try chunk_hashes.append("i9j0k1l2");
-    try chunk_hashes.append("m3n4o5p6");
+    try chunk_hashes.append(.{ .chunkName = "a1b2c3d4", .chunkSize = 1 });
+    try chunk_hashes.append(.{ .chunkName = "e5f6g7h8", .chunkSize = 2 });
 
     var expected = try File.init(
         std.testing.allocator,
@@ -137,10 +149,14 @@ test "File deserialize" {
         \\  "fileSize": 1024,
         \\  "numberOfChunks": 4,
         \\  "chunk_hashes": [
-        \\      "a1b2c3d4",
-        \\      "e5f6g7h8",
-        \\      "i9j0k1l2",
-        \\      "m3n4o5p6"
+        \\      {
+        \\         "chunkName": "a1b2c3d4",
+        \\         "chunkSize": 1
+        \\      },
+        \\      {
+        \\          "chunkName": "e5f6g7h8",
+        \\          "chunkSize": 2
+        \\      }
         \\  ],
         \\  "fullFileHash": "abcdef1234567890"
         \\ }
@@ -154,15 +170,16 @@ test "File deserialize" {
     try std.testing.expectEqualStrings(expected.fullFileHash, parsed.fullFileHash);
 
     for (expected.chunk_hashes.items, parsed.chunk_hashes.items) |valid, result| {
-        try std.testing.expectEqualStrings(valid, result);
+        try std.testing.expectEqualStrings(valid.chunkName, result.chunkName);
+        try std.testing.expectEqual(valid.chunkSize, result.chunkSize);
     }
 }
 
 test "File serialize" {
-    var chunk_hashes = std.ArrayList([]const u8).init(std.testing.allocator);
+    var chunk_hashes = std.ArrayList(File.ChunkInfo).init(std.testing.allocator);
     defer chunk_hashes.deinit();
-    try chunk_hashes.append("a1b2c3d4");
-    try chunk_hashes.append("e5f6g7h8");
+    try chunk_hashes.append(.{ .chunkName = "a1b2c3d4", .chunkSize = 1 });
+    try chunk_hashes.append(.{ .chunkName = "e5f6g7h8", .chunkSize = 2 });
 
     var file = try File.init(
         std.testing.allocator,
@@ -179,24 +196,23 @@ test "File serialize" {
     try file.serialize(list.writer(), null);
 
     const expected =
-        \\{"filename":"test.txt","fileSize":512,"numberOfChunks":2,"fullFileHash":"1234567890abcdef","chunk_hashes":["a1b2c3d4","e5f6g7h8"]}
+        \\{"filename":"test.txt","fileSize":512,"numberOfChunks":2,"fullFileHash":"1234567890abcdef","chunk_hashes":[{"chunkName":"a1b2c3d4","chunkSize":1},{"chunkName":"e5f6g7h8","chunkSize":2}]}
     ;
 
     try std.testing.expectEqualStrings(expected, list.items);
 }
 
 test "File end-to-end serialization" {
-    var initial_chunks = std.ArrayList([]const u8).init(std.testing.allocator);
-    defer initial_chunks.deinit();
-    try initial_chunks.append("hash1");
-    try initial_chunks.append("hash2");
-    try initial_chunks.append("hash3");
+    var chunk_hashes = std.ArrayList(File.ChunkInfo).init(std.testing.allocator);
+    defer chunk_hashes.deinit();
+    try chunk_hashes.append(.{ .chunkName = "a1b2c3d4", .chunkSize = 1 });
+    try chunk_hashes.append(.{ .chunkName = "e5f6g7h8", .chunkSize = 2 });
 
     var original = try File.init(
         std.testing.allocator,
         "document.txt",
         2048,
-        initial_chunks.items,
+        chunk_hashes.items,
         "totalhash123",
     );
     defer original.deinit();
@@ -214,7 +230,8 @@ test "File end-to-end serialization" {
     try std.testing.expectEqual(original.chunk_hashes.items.len, deserialized.chunk_hashes.items.len);
 
     for (original.chunk_hashes.items, deserialized.chunk_hashes.items) |orig, des| {
-        try std.testing.expectEqualStrings(orig, des);
+        try std.testing.expectEqualStrings(orig.chunkName, des.chunkName);
+        try std.testing.expectEqual(orig.chunkSize, des.chunkSize);
     }
 
     var verification_buffer = std.ArrayList(u8).init(std.testing.allocator);
@@ -300,9 +317,9 @@ pub const ChunkDir = struct {
         try thisfile.seekTo(0);
         var filereader = thisfile.reader();
 
-        var chunk_hashes = std.ArrayList([]const u8).init(self.alloc);
+        var chunk_hashes = std.ArrayList(File.ChunkInfo).init(self.alloc);
         defer {
-            for (chunk_hashes.items) |hash| self.alloc.free(hash);
+            for (chunk_hashes.items) |chunk| self.alloc.free(chunk.chunkName);
             chunk_hashes.deinit();
         }
 
@@ -321,7 +338,10 @@ pub const ChunkDir = struct {
                 "{s}",
                 .{std.fmt.fmtSliceHexLower(&sha.finalResult())},
             );
-            try chunk_hashes.append(chunkfilename);
+            try chunk_hashes.append(.{
+                .chunkName = chunkfilename,
+                .chunkSize = @as(i64, @intCast(n)),
+            });
 
             var chunk_file = try cache.createFile(chunkfilename, .{});
             defer chunk_file.close();

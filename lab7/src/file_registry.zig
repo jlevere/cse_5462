@@ -28,11 +28,17 @@ pub const FileRegistry = struct {
         ),
     );
 
+    pub const ChunkInfo = struct {
+        chunkName: []const u8,
+        chunkSize: i64,
+    };
+
     pub const FileData = struct {
         filename: []const u8,
         fullFileHash: []const u8,
         fileSize: i64,
         clientIPs: std.ArrayList(std.net.Address),
+        chunk_hashes: std.ArrayList(ChunkInfo),
     };
 
     // Store the actual files in multiarraylist
@@ -56,10 +62,15 @@ pub const FileRegistry = struct {
     pub fn deinit(self: *Self) void {
         const slice = self.files.slice();
 
-        for (slice.items(.filename), slice.items(.fullFileHash), slice.items(.clientIPs)) |filename, hash, *client_list| {
+        for (slice.items(.filename), slice.items(.fullFileHash), slice.items(.clientIPs), slice.items(.chunk_hashes)) |filename, hash, *client_list, *chunk_list| {
             self.alloc.free(filename);
             self.alloc.free(hash);
             client_list.deinit();
+
+            for (chunk_list.items) |chunk| {
+                self.alloc.free(chunk.chunkName);
+            }
+            chunk_list.deinit();
         }
         self.files.deinit(self.alloc);
         self.map.deinit();
@@ -69,11 +80,20 @@ pub const FileRegistry = struct {
     pub fn registerClient() void {}
 
     /// Regster a new file
-    pub fn registerFile(self: *Self, filename: []const u8, fileSize: i64, hash: []const u8, client_addr: std.net.Address) !void {
+    pub fn registerFile(
+        self: *Self,
+        filename: []const u8,
+        fileSize: i64,
+        hash: []const u8,
+        client_addr: std.net.Address,
+        chunk_hashes: ?[]const ChunkInfo,
+    ) !void {
+        log.debug("register file: {s}:{}:{s}", .{ filename, client_addr, hash });
 
         // If the file already exists
         if (self.filter.contains(hash)) {
             if (self.map.get(hash)) |file_index| {
+                log.debug("reg seen {s}", .{hash});
                 var client_list = &self.files.slice().items(.clientIPs)[file_index];
 
                 for (client_list.items) |addr| {
@@ -84,6 +104,7 @@ pub const FileRegistry = struct {
 
                 // add the new client to file
                 try client_list.append(client_addr);
+                log.debug("added new client {} for {s}", .{ client_addr, hash });
                 return;
             }
         }
@@ -96,12 +117,24 @@ pub const FileRegistry = struct {
         );
         try client_array.append(client_addr);
 
+        var chunk_array = std.ArrayList(ChunkInfo).init(self.alloc);
+
+        if (chunk_hashes) |chunks| {
+            for (chunks) |chunk| {
+                try chunk_array.append(.{
+                    .chunkName = try self.alloc.dupe(u8, chunk.chunkName),
+                    .chunkSize = chunk.chunkSize,
+                });
+            }
+        }
+
         const index = try self.files.addOne(self.alloc);
         self.files.set(index, .{
             .filename = try self.alloc.dupe(u8, filename),
             .fullFileHash = my_hash,
             .fileSize = fileSize,
             .clientIPs = client_array,
+            .chunk_hashes = chunk_array,
         });
 
         // update lookup system
@@ -203,6 +236,7 @@ pub const FileRegistry = struct {
                 .fullFileHash = slice.items(.fullFileHash)[i],
                 .fileSize = slice.items(.fileSize)[i],
                 .clientIPs = slice.items(.clientIPs)[i],
+                .chunk_hashes = slice.items(.chunk_hashes)[i],
             };
             try self.serializeFile(file, writer);
 
@@ -219,11 +253,47 @@ pub const FileRegistry = struct {
         const slice = self.files.slice();
 
         for (0..self.files.len) |i| {
+            var clients = std.ArrayList(struct {
+                IP: []const u8,
+                Port: []const u8,
+            }).init(self.alloc);
+
+            for (slice.items(.clientIPs)[i].items) |client| {
+                var ip_buf: [64]u8 = undefined;
+                var port_buf: [16]u8 = undefined;
+
+                const bytes = @as(*const [4]u8, @ptrCast(&client.in.sa.addr));
+                const ip = try std.fmt.bufPrint(&ip_buf, "{}.{}.{}.{}", .{
+                    bytes[0],
+                    bytes[1],
+                    bytes[2],
+                    bytes[3],
+                });
+
+                const port = try std.fmt.bufPrint(&port_buf, "{d}", .{client.getPort()});
+
+                try clients.append(.{
+                    .IP = try self.alloc.dupe(u8, ip),
+                    .Port = try self.alloc.dupe(u8, port),
+                });
+            }
+            defer {
+                for (clients.items) |item| {
+                    self.alloc.free(item.IP);
+                    self.alloc.free(item.Port);
+                }
+                clients.deinit();
+            }
+
             try std.json.stringify(
                 .{
                     .filename = slice.items(.filename)[i],
                     .fullFileHash = slice.items(.fullFileHash)[i],
                     .fileSize = slice.items(.fileSize)[i],
+                    .numberOfPeers = slice.items(.clientIPs)[i].items.len,
+                    .numberOfChunks = slice.items(.chunk_hashes)[i].items.len,
+                    .chunk_hashes = slice.items(.chunk_hashes)[i].items,
+                    .IPInfo = clients.items,
                 },
                 .{},
                 writer,
@@ -274,9 +344,9 @@ test "FileRegistry - basic functionality" {
     const client_addr1 = try std.net.Address.parseIp4("127.0.0.1", 10423);
     const client_addr2 = try std.net.Address.parseIp4("192.168.1.10", 8080);
 
-    try reg.registerFile(filename1, 10, hash1, client_addr1);
-    try reg.registerFile(filename1, 10, hash1, client_addr2);
-    try reg.registerFile(filename2, 10, hash2, client_addr1);
+    try reg.registerFile(filename1, 10, hash1, client_addr1, null);
+    try reg.registerFile(filename1, 10, hash1, client_addr2, null);
+    try reg.registerFile(filename2, 10, hash2, client_addr1, null);
 
     const hash1clients = try reg.search(hash1);
     defer reg.alloc.free(hash1clients);
@@ -303,8 +373,8 @@ test "FileRegistry - duplicate registration" {
     const hash = "testhash000000000000000000000";
     const client_addr = try std.net.Address.parseIp4("127.0.0.1", 10423);
 
-    try reg.registerFile(filename, 10, hash, client_addr);
-    try reg.registerFile(filename, 10, hash, client_addr);
+    try reg.registerFile(filename, 10, hash, client_addr, null);
+    try reg.registerFile(filename, 10, hash, client_addr, null);
 
     const clients = try reg.search(hash);
     defer reg.alloc.free(clients);
@@ -325,13 +395,40 @@ test "FileRegistry - serialization" {
     const hash = "testhash000000000000000000000";
     const client_addr = try std.net.Address.parseIp4("127.0.0.1", 10423);
 
-    try reg.registerFile(filename, 10, hash, client_addr);
+    try reg.registerFile(filename, 10, hash, client_addr, null);
 
     // Serialize to buf instead of stdout
     var buffer = std.ArrayList(u8).init(std.testing.allocator);
     defer buffer.deinit();
 
     try reg.serialize(buffer.writer());
+
+    const output = buffer.items;
+    try std.testing.expect(std.mem.indexOf(u8, output, filename) != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, hash) != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "127.0.0.1") != null);
+}
+
+test "FileRegistry - queryResponse" {
+    var reg = try FileRegistry.init(std.testing.allocator);
+    defer reg.deinit();
+
+    const filename = "testfile";
+    const hash = "testhash000000000000000000000";
+    const client_addr = try std.net.Address.parseIp4("127.0.0.1", 10423);
+
+    const chunks = [_]FileRegistry.ChunkInfo{
+        .{ .chunkName = "chunk1", .chunkSize = 100 },
+        .{ .chunkName = "chunk2", .chunkSize = 200 },
+    };
+
+    try reg.registerFile(filename, 10, hash, client_addr, &chunks);
+
+    // Serialize to buf instead of stdout
+    var buffer = std.ArrayList(u8).init(std.testing.allocator);
+    defer buffer.deinit();
+
+    try reg.queryResponse(buffer.writer());
 
     const output = buffer.items;
     try std.testing.expect(std.mem.indexOf(u8, output, filename) != null);

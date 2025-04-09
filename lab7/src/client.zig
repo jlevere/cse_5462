@@ -8,7 +8,7 @@ const FileRegistry = @import("file_registry.zig").FileRegistry;
 const json = std.json;
 
 pub const std_options: std.Options = .{
-    .log_level = .info,
+    .log_level = .debug,
 };
 
 const log = std.log.scoped(.client);
@@ -226,6 +226,7 @@ const Client = struct {
     }
 
     fn processQueryResponse(self: *Self, root: *std.json.Value, sender: std.net.Address) !void {
+        _ = sender; // autofix
         const files = root.object.get("files") orelse {
             log.warn("queryResponse missing files array", .{});
             return;
@@ -239,17 +240,38 @@ const Client = struct {
                     const filename = (thisfile.get("filename") orelse continue).string;
                     const size = (thisfile.get("fileSize") orelse continue).integer;
                     const hash = (thisfile.get("fullFileHash") orelse continue).string;
+                    const clients = (thisfile.get("IPInfo") orelse continue).array;
+                    const hashes = (thisfile.get("chunk_hashes") orelse continue).array;
+
+                    var chunks = try self.alloc.alloc(FileRegistry.ChunkInfo, hashes.items.len);
+                    defer self.alloc.free(chunks);
 
                     if (size < 0) continue;
 
-                    self.files.registerFile(
-                        filename,
-                        @intCast(size),
-                        hash,
-                        sender,
-                    ) catch |err| {
-                        log.warn("Failed to register {s}: {s}", .{ filename, @errorName(err) });
-                    };
+                    for (clients.items) |client| {
+                        const client_ip = (client.object.get("IP") orelse continue).string;
+                        const clent_port = (client.object.get("Port") orelse continue).string;
+
+                        const port = try std.fmt.parseInt(u16, clent_port, 10);
+                        const client_addr = try std.net.Address.parseIp(client_ip, port);
+
+                        for (hashes.items, 0..) |chunk, i| {
+                            chunks[i] = .{
+                                .chunkName = chunk.object.get("chunkName").?.string,
+                                .chunkSize = chunk.object.get("chunkSize").?.integer,
+                            };
+                        }
+
+                        self.files.registerFile(
+                            filename,
+                            @intCast(size),
+                            hash,
+                            client_addr,
+                            chunks,
+                        ) catch |err| {
+                            log.warn("Failed to register {s}: {s}", .{ filename, @errorName(err) });
+                        };
+                    }
                 }
             },
             else => {

@@ -11,7 +11,7 @@ comptime {
 }
 
 pub const std_options: std.Options = .{
-    .log_level = .info,
+    .log_level = .debug,
 };
 
 const log = std.log.scoped(.server);
@@ -84,6 +84,7 @@ pub fn main() !void {
     while (true) {
         const buf = try gpa.alloc(u8, 65535);
         defer gpa.free(buf);
+        try bw.flush();
 
         const recv_info = try socket.recvFrom(buf);
         const json_values = std.json.parseFromSlice(
@@ -105,16 +106,27 @@ pub fn main() !void {
                 try stdout.print("\n", .{});
                 try stdout.print("updated regsitrystate: \n", .{});
 
+                const json_chunks = (json_values.value.object.get("chunk_hashes") orelse continue).array;
+
+                var chunks = try gpa.alloc(FileRegistry.ChunkInfo, json_chunks.items.len);
+
+                for (json_chunks.items, 0..) |chunk, i| {
+                    chunks[i] = .{
+                        .chunkName = chunk.object.get("chunkName").?.string,
+                        .chunkSize = chunk.object.get("chunkSize").?.integer,
+                    };
+                }
+
                 try registry.registerFile(
                     json_values.value.object.get("filename").?.string,
                     json_values.value.object.get("fileSize").?.integer,
                     json_values.value.object.get("fullFileHash").?.string,
-
                     recv_info.sender,
+                    chunks,
                 );
 
-                try stdout.print("\x1b[2J\x1b[H\x1b[3J", .{}); // clear terminal
-                try bw.flush();
+                // try stdout.print("\x1b[2J\x1b[H\x1b[3J", .{}); // clear terminal
+                // try bw.flush();
 
                 switch (output_format) {
                     .json => try registry.serialize(stdout),
@@ -147,6 +159,5 @@ pub fn main() !void {
                 log.debug("got malformed json, does not contain valid request Type", .{});
             },
         }
-        try bw.flush();
     }
 }
