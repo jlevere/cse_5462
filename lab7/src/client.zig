@@ -179,7 +179,7 @@ const Client = struct {
         };
         defer json_values.deinit();
 
-        const Commands = enum { upload, query, queryResponse, notfound };
+        const Commands = enum { upload, query, queryResponse, getChunk, notfound };
         const request_type = (json_values.value.object.get("requestType") orelse
             std.json.Value{ .string = "notfound" }).string;
         const case = std.meta.stringToEnum(Commands, request_type) orelse Commands.notfound;
@@ -192,8 +192,9 @@ const Client = struct {
                 std.debug.print("got query msg from {}\n", .{recv_info.sender});
             },
             .queryResponse => {
-                try self.processQueryResponse(&json_values.value, recv_info.sender);
+                try self.processQueryResponse(&json_values.value);
             },
+            .getChunk => {},
             .notfound => {
                 std.debug.print("cmd not found, got {s} from {}\n", .{ buf[0..recv_info.bytes_recv], recv_info.sender });
             },
@@ -209,24 +210,48 @@ const Client = struct {
         var command_iter = std.mem.splitScalar(u8, trimmed_line, ' ');
         const command_str = command_iter.first();
 
-        const Commands = enum { ls, query, notfound };
+        const Commands = enum { ls, query, get, help, notfound };
 
         const case = std.meta.stringToEnum(Commands, command_str) orelse Commands.notfound;
         switch (case) {
+            .help => {
+                inline for (@typeInfo(Commands).@"enum".fields) |field| {
+                    try std.io.getStdOut().writer().print("{s}, ", .{field.name});
+                    try std.io.getStdOut().writer().print("\n", .{});
+                }
+            },
             .ls => {
                 try self.displayFiles();
             },
             .query => {
                 try self.requestRemoteRegistry();
             },
+            .get => {
+                if (command_iter.next()) |val| {
+                    const idx = std.fmt.parseInt(usize, val, 10) catch {
+                        try std.io.getStdOut().writer().print("Specify which file you want by number\n", .{});
+                        return;
+                    };
+
+                    const hash = try self.files.getHashIdx(idx, self.alloc) orelse {
+                        try std.io.getStdOut().writer().print("idx out of range\n", .{});
+                        return;
+                    };
+                    defer self.alloc.free(hash);
+
+                    std.debug.print("asked for hash: {s}\n", .{hash});
+                } else {
+                    try std.io.getStdOut().writer().print("Specify which file you want by number\n", .{});
+                }
+            },
             .notfound => {
+                if (trimmed_line.len == 0) return;
                 std.debug.print("notfound\n", .{});
             },
         }
     }
 
-    fn processQueryResponse(self: *Self, root: *std.json.Value, sender: std.net.Address) !void {
-        _ = sender; // autofix
+    fn processQueryResponse(self: *Self, root: *std.json.Value) !void {
         const files = root.object.get("files") orelse {
             log.warn("queryResponse missing files array", .{});
             return;

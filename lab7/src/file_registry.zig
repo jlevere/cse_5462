@@ -142,11 +142,11 @@ pub const FileRegistry = struct {
         try self.map.put(my_hash, index);
     }
 
-    /// Search for clents by filehash
-    pub fn search(self: *Self, hash: []const u8) ![]std.net.Address {
+    /// Given a file hash, return the list of clients that have it
+    pub fn getClients(self: *Self, hash: []const u8) !?[]std.net.Address {
 
         // quick negitive lookup
-        if (!self.filter.contains(hash)) return &.{};
+        if (!self.filter.contains(hash)) return null;
 
         if (self.map.get(hash)) |file_index| {
             const client_list = self.files.slice().items(.clientIPs)[file_index];
@@ -162,7 +162,41 @@ pub const FileRegistry = struct {
         // the bloomfilter can make mistakes, so if it isnt in the map
         // then we should still return nothing.
         log.warn("bloomfilter falsepos in search for hash {s}", .{hash});
-        return &.{};
+        return null;
+    }
+
+    /// Given a file hash, return the chunks it is made from
+    pub fn getChunks(self: *Self, hash: []const u8) !?[]ChunkInfo {
+        if (!self.filter.contains(hash)) return null;
+
+        if (self.map.get(hash)) |file_index| {
+            const chunks = self.files.slice().items(.chunk_hashes)[file_index];
+
+            var result = try std.ArrayList(ChunkInfo).initCapacity(
+                self.alloc,
+                chunks.items.len,
+            );
+
+            for (chunks.items) |chunk| {
+                try result.append(.{
+                    .chunkName = try self.alloc.dupe(u8, chunk.chunkName),
+                    .chunkSize = chunk.chunkSize,
+                });
+            }
+
+            return result.toOwnedSlice();
+        }
+
+        return null;
+    }
+
+    /// Given an index, return the file hash
+    pub fn getHashIdx(self: *Self, idx: usize, alloc: std.mem.Allocator) !?[]const u8 {
+        const slice = self.files.slice();
+
+        if (idx > slice.items(.fullFileHash).len) return null;
+
+        return try alloc.dupe(u8, slice.items(.fullFileHash)[idx]);
     }
 
     pub fn fileCount(self: Self) usize {
