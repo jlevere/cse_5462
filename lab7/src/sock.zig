@@ -148,6 +148,38 @@ pub const UDPSocket = struct {
 
         socket_log.info("Bound to {any}", .{bound_addr});
     }
+
+    /// Connects to a remote address and returns the local ip used to connect with
+    ///
+    /// Arguments:
+    /// - `addr`: Remote address to connect to
+    ///
+    /// Returns:
+    /// - The local address used for the connection
+    pub fn getLocalName(self: *Self, addr: std.net.Address) !std.net.Address {
+        if (addr.any.family != std.posix.AF.INET) {
+            return error.IPv4OnlySupported;
+        }
+
+        try std.posix.connect(
+            self.socketfd,
+            &addr.any,
+            addr.getOsSockLen(),
+        );
+
+        var local_addr: std.net.Address = undefined;
+        var local_addr_len: std.posix.socklen_t = @sizeOf(std.net.Address);
+
+        try std.posix.getsockname(
+            self.socketfd,
+            &local_addr.any,
+            &local_addr_len,
+        );
+
+        socket_log.debug("Local endpoint: {any}", .{local_addr});
+
+        return local_addr;
+    }
 };
 
 /// Checks IPv4 address in multicast range (224.0.0.0/4)
