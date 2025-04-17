@@ -8,7 +8,6 @@ This project implements a distributed file retrieval system where clients direct
 
 - Assignment [details](ASSIGNMENT.md)
 - [Getting Started](#getting-started)
-- [Design](#design)
 - [Testing](#testing) [![Main code fmt and test](https://github.com/CSE-5462-OSU-Spring2025/lab7-jLevere/actions/workflows/main.yaml/badge.svg)](https://github.com/CSE-5462-OSU-Spring2025/lab7-jLevere/actions/workflows/main.yaml)
 
 ## Getting Started
@@ -52,16 +51,7 @@ Compile with `zig build` or download pre-built binaries from [releases](https://
 ./client FILES/ --ip 224.0.0.1 --port 8011
 ```
 
-![client.gif](./docs/client.gif)
-
-![server.gif](./docs/server.gif)
-
-## Design
-
-### Workflow
-
-![workflow1](./docs/lab7-pt1.png)
-![workflow2](./docs/lab7-pt2.png)
+_I sadly didnt have time to make the nice pretty usage gifs like I normally do_
 
 ### JSON Object Structure
 
