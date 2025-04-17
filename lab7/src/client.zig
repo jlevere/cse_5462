@@ -317,10 +317,20 @@ const Client = struct {
 
         const max_chunk_size = 1472; // fit inside an 1500 mtu window with some overhead of the pkt header
 
-        var chunks = std.mem.window(u8, chunk_data, max_chunk_size, max_chunk_size);
-        while (chunks.next()) |chunk| {
-            log.debug("Sending fragment {s}", .{chunk_name.string});
-            try self.socket.sendTo(sender, chunk);
+        // Calculate how many chunks we need
+        const num_chunks = (chunk_data.len + max_chunk_size - 1) / max_chunk_size;
+
+        // Send each chunk
+        var i: usize = 0;
+        while (i < num_chunks) : (i += 1) {
+            const start = i * max_chunk_size;
+            const end = @min(start + max_chunk_size, chunk_data.len);
+            const fragment = chunk_data[start..end];
+
+            log.debug("Sending fragment {d}/{d} of {s}", .{ i + 1, num_chunks, chunk_name.string });
+            try self.socket.sendTo(sender, fragment);
+
+            std.time.sleep(std.time.ns_per_us * 50);
         }
 
         log.info("Sent chunk {s} ({d} bytes) to {}", .{ chunk_name.string, chunk_data.len, sender });
@@ -621,7 +631,7 @@ const DownloadManager = struct {
                 .chunkName = request.hash,
             }, .{}, json_request.writer());
 
-            self.timeout = std.time.timestamp() + 10; // 10sec timeout
+            self.timeout = std.time.timestamp() + 30; // 10sec timeout
             try self.sock.sendTo(request.peer, json_request.items);
             log.info("Requested chunk {s} from {}", .{ request.hash, request.peer });
         }
@@ -629,25 +639,20 @@ const DownloadManager = struct {
 
     // handles incoming data. Returns true if its a chunk
     pub fn handleIncomingChunkData(self: *Self, data: []const u8, peer: std.net.Address, cache: *file.ChunkDir) !bool {
-        // Check if we have an active request
         const request = if (self.current_request) |*req| req else return false;
 
-        // Only accept data from the peer we requested from
         if (!std.net.Address.eql(peer, request.peer)) {
             return false;
         }
 
-        // Add the data to our buffer
         try request.buff.appendSlice(data);
 
-        // Check if chunk is complete
         if (request.buff.items.len >= request.size) {
             var buf: [64]u8 = undefined;
             const hash = try sha256(request.buff.items, &buf);
 
             if (!std.mem.eql(u8, request.hash, hash)) {
                 log.warn("Invalid chunk hash received", .{});
-                // Retry with the next peer
                 try self.switchPeer();
                 return true;
             }
@@ -655,18 +660,12 @@ const DownloadManager = struct {
             // Valid chunk received, save it
             try cache.saveChunk(request.hash, request.buff.items);
 
-            log.info("Finished save chunk", .{});
-
             // Clean up this request
             self.alloc.free(request.hash);
             request.buff.deinit();
 
-            log.info("Freed request hash and buffer", .{});
-
             // Remove the first chunk from pending
             _ = self.pending_chunks.orderedRemove(0);
-
-            log.info("Removed the first chunk from pending", .{});
 
             // Clear current request
             self.current_request = null;
@@ -674,11 +673,9 @@ const DownloadManager = struct {
             // Start next chunk
             try self.startNextChunk(cache);
 
-            log.info("Start next chunk", .{});
-
             return true;
         } else {
-            log.info("{d} bytes remaining", .{self.current_request.?.size - self.current_request.?.buff.items.len});
+            log.debug("{d} bytes remaining", .{self.current_request.?.size - self.current_request.?.buff.items.len});
         }
 
         return true;
