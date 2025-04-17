@@ -1,6 +1,8 @@
 const std = @import("std");
-const FileRegistry = @import("file_registry.zig").FileRegistry;
-const ChunkInfo = @import("file_registry.zig").ChunkInfo;
+
+const filereg = @import("file_registry.zig");
+const FileRegistry = filereg.FileRegistry;
+const ChunkInfo = filereg.ChunkInfo;
 
 const log = std.log.scoped(.file_chunking);
 
@@ -126,7 +128,7 @@ pub const File = struct {
 };
 
 test "File deserialize" {
-    var chunk_hashes = std.ArrayList(File.ChunkInfo).init(std.testing.allocator);
+    var chunk_hashes = std.ArrayList(ChunkInfo).init(std.testing.allocator);
     defer chunk_hashes.deinit();
     try chunk_hashes.append(.{ .chunkName = "a1b2c3d4", .chunkSize = 1 });
     try chunk_hashes.append(.{ .chunkName = "e5f6g7h8", .chunkSize = 2 });
@@ -173,7 +175,7 @@ test "File deserialize" {
 }
 
 test "File serialize" {
-    var chunk_hashes = std.ArrayList(File.ChunkInfo).init(std.testing.allocator);
+    var chunk_hashes = std.ArrayList(ChunkInfo).init(std.testing.allocator);
     defer chunk_hashes.deinit();
     try chunk_hashes.append(.{ .chunkName = "a1b2c3d4", .chunkSize = 1 });
     try chunk_hashes.append(.{ .chunkName = "e5f6g7h8", .chunkSize = 2 });
@@ -200,7 +202,7 @@ test "File serialize" {
 }
 
 test "File end-to-end serialization" {
-    var chunk_hashes = std.ArrayList(File.ChunkInfo).init(std.testing.allocator);
+    var chunk_hashes = std.ArrayList(ChunkInfo).init(std.testing.allocator);
     defer chunk_hashes.deinit();
     try chunk_hashes.append(.{ .chunkName = "a1b2c3d4", .chunkSize = 1 });
     try chunk_hashes.append(.{ .chunkName = "e5f6g7h8", .chunkSize = 2 });

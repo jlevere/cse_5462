@@ -504,7 +504,7 @@ test "FileRegistry - queryResponse" {
     const hash = "testhash000000000000000000000";
     const client_addr = try std.net.Address.parseIp4("127.0.0.1", 10423);
 
-    const chunks = [_]FileRegistry.ChunkInfo{
+    const chunks = [_]ChunkInfo{
         .{ .chunkName = "chunk1", .chunkSize = 100 },
         .{ .chunkName = "chunk2", .chunkSize = 200 },
     };
