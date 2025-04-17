@@ -4,6 +4,10 @@ const UDPSocket = @import("sock.zig").UDPSocket;
 const file = @import("file_chunking.zig");
 const build_info = @import("build_info");
 const FileRegistry = @import("file_registry.zig").FileRegistry;
+const ChunkInfo = @import("file_registry.zig").ChunkInfo;
+const bflib = @import("bloom_filter.zig");
+
+const BloomFilter = bflib.WyBloomFilter;
 
 const json = std.json;
 
@@ -118,21 +122,26 @@ const Client = struct {
 
     alloc: std.mem.Allocator,
 
+    download_mgr: DownloadManager,
+
     pub fn init(
         alloc: std.mem.Allocator,
         file_dir: std.fs.Dir,
     ) !Self {
+        const sock = try UDPSocket.init(false);
         return .{
             .cache = try file.ChunkDir.init(alloc, file_dir, CACHENAME),
-            .socket = try UDPSocket.init(false),
+            .socket = sock,
             .epoll = try Epoll.init(),
             .files = try FileRegistry.init(alloc),
             .server_addr = undefined,
             .alloc = alloc,
+            .download_mgr = try DownloadManager.init(alloc, sock),
         };
     }
 
     pub fn deinit(self: *Self) void {
+        self.download_mgr.deinit();
         self.socket.deinit();
         self.epoll.deinit();
         self.files.deinit();
@@ -141,6 +150,26 @@ const Client = struct {
     pub fn runEventLoop(self: *Self) !void {
         try self.epoll.addFd(self.socket.socketfd, std.os.linux.EPOLL.IN);
         try self.epoll.addFd(std.io.getStdIn().handle, std.os.linux.EPOLL.IN);
+
+        const timer_fd = try std.posix.timerfd_create(
+            @as(std.os.linux.timerfd_clockid_t, @enumFromInt(1)), // CLOCK_MONOTONIC
+            std.os.linux.TFD{ .CLOEXEC = true },
+        );
+        defer std.posix.close(timer_fd);
+
+        var new_value = std.os.linux.itimerspec{
+            .it_interval = .{ .sec = 1, .nsec = 0 },
+            .it_value = .{ .sec = 1, .nsec = 0 },
+        };
+
+        try std.posix.timerfd_settime(
+            timer_fd,
+            std.os.linux.TFD.TIMER{ .ABSTIME = true },
+            &new_value,
+            null,
+        );
+
+        try self.epoll.addFd(timer_fd, std.os.linux.EPOLL.IN);
 
         while (true) {
             const num_events = try self.epoll.wait();
@@ -152,6 +181,8 @@ const Client = struct {
                     try self.handleSocketEvent();
                 } else if (current_fd == std.io.getStdIn().handle) {
                     try self.handleStdinEvent();
+                } else if (current_fd == timer_fd) {
+                    try self.handleTimerEvent();
                 }
             }
         }
@@ -168,15 +199,25 @@ const Client = struct {
             }
         };
 
+        // First check if the packet matches any active download
+        if (try self.download_mgr.handleIncomingChunkData(buf[0..recv_info.bytes_recv], recv_info.sender, &self.cache)) {
+            return; // Packet was for an active download
+        }
+
+        // If not an active download packet, try to parse as JSON command
+        try self.handleJsonCommand(buf[0..recv_info.bytes_recv], recv_info.sender);
+    }
+
+    fn handleJsonCommand(self: *Self, data: []const u8, sender: std.net.Address) !void {
         var json_values = std.json.parseFromSlice(
             std.json.Value,
             self.alloc,
-            buf[0..recv_info.bytes_recv],
+            data,
             .{ .allocate = .alloc_always },
         ) catch |parse_err| {
             log.err("Unable to parse JSON: {any}\nMessage: {s}", .{
                 parse_err,
-                buf[0..recv_info.bytes_recv],
+                data,
             });
             return;
         };
@@ -189,19 +230,25 @@ const Client = struct {
 
         switch (case) {
             .upload => {
-                std.debug.print("got upload msg from {}\n", .{recv_info.sender});
+                log.info("Got upload message from {}", .{sender});
             },
             .query => {
-                std.debug.print("got query msg from {}\n", .{recv_info.sender});
+                log.info("Got query message from {}", .{sender});
             },
             .queryResponse => {
                 try self.processQueryResponse(&json_values.value);
             },
-            .getChunk => {},
+            .getChunk => {
+                try self.handleGetChunkRequest(&json_values.value, sender);
+            },
             .notfound => {
-                std.debug.print("cmd not found, got {s} from {}\n", .{ buf[0..recv_info.bytes_recv], recv_info.sender });
+                log.warn("Unknown command: {s} from {}", .{ data, sender });
             },
         }
+    }
+
+    fn handleTimerEvent(self: *Self) !void {
+        try self.download_mgr.checkTimeouts();
     }
 
     pub fn handleStdinEvent(self: *Self) !void {
@@ -243,6 +290,8 @@ const Client = struct {
                     defer self.alloc.free(hash);
 
                     std.debug.print("asked for hash: {s}\n", .{hash});
+
+                    try self.getFile(hash);
                 } else {
                     try std.io.getStdOut().writer().print("Specify which file you want by number\n", .{});
                 }
@@ -252,6 +301,69 @@ const Client = struct {
                 std.debug.print("notfound\n", .{});
             },
         }
+    }
+
+    fn handleGetChunkRequest(self: *Self, json_value: *std.json.Value, sender: std.net.Address) !void {
+        const chunk_name = json_value.object.get("chunkName") orelse {
+            log.warn("getChunk missing chunkName field from {}", .{sender});
+            return;
+        };
+
+        const chunk_data = self.cache.fetchChunk(chunk_name.string, self.alloc) catch |err| {
+            log.warn("Failed to fetch chunk {s}: {s}", .{ chunk_name.string, @errorName(err) });
+            return;
+        };
+        defer self.alloc.free(chunk_data);
+
+        const max_chunk_size = 1472; // fit inside an 1500 mtu window with some overhead of the pkt header
+
+        var chunks = std.mem.window(u8, chunk_data, max_chunk_size, max_chunk_size);
+        while (chunks.next()) |chunk| {
+            log.debug("Sending fragment {s}", .{chunk_name.string});
+            try self.socket.sendTo(sender, chunk);
+        }
+
+        log.info("Sent chunk {s} ({d} bytes) to {}", .{ chunk_name.string, chunk_data.len, sender });
+    }
+
+    fn getFile(self: *Self, filehash: []const u8) !void {
+        // Check if file already exists locally
+        const maybe_filename = try self.files.getFileName(filehash, self.alloc);
+        defer if (maybe_filename) |filename| self.alloc.free(filename);
+
+        if (maybe_filename == null) {
+            log.err("No filename known for file hash {s}", .{filehash});
+            return;
+        }
+
+        const file_stat = self.cache.dir.statFile(maybe_filename.?) catch |err| switch (err) {
+            error.FileNotFound => null,
+            else => return err,
+        };
+        if (file_stat != null and file_stat.?.kind == .file) {
+            log.info("File {s} already exists at {s}", .{ filehash, maybe_filename.? });
+            return;
+        }
+
+        // Check if already being downloaded
+        if (self.download_mgr.pending_chunks.items.len != 0) {
+            log.err("There is already a file downloading, wait until it is done", .{});
+            return;
+        }
+
+        // Get file information from registry
+        var arena = std.heap.ArenaAllocator.init(self.alloc);
+        defer arena.deinit();
+        const arena_allocator = arena.allocator();
+
+        const thisfile = try self.files.getFile(filehash, arena_allocator);
+
+        try self.cache.writeManifest(thisfile);
+
+        // Start download through download manager
+        try self.download_mgr.getFile(thisfile, &self.cache);
+
+        log.info("Started download for {s}", .{maybe_filename.?});
     }
 
     fn processQueryResponse(self: *Self, root: *std.json.Value) !void {
@@ -271,20 +383,20 @@ const Client = struct {
                     const clients = (thisfile.get("IPInfo") orelse continue).array;
                     const hashes = (thisfile.get("chunk_hashes") orelse continue).array;
 
-                    var chunks = try self.alloc.alloc(FileRegistry.ChunkInfo, hashes.items.len);
-                    defer self.alloc.free(chunks);
+                    var maybe_chunks = try self.alloc.alloc(ChunkInfo, hashes.items.len);
+                    defer self.alloc.free(maybe_chunks);
 
                     if (size < 0) continue;
 
                     for (clients.items) |client| {
                         const client_ip = (client.object.get("IP") orelse continue).string;
-                        const clent_port = (client.object.get("Port") orelse continue).string;
+                        const clent_port = (client.object.get("Port") orelse continue).integer;
 
-                        const port = try std.fmt.parseInt(u16, clent_port, 10);
+                        const port = @as(u16, @intCast(clent_port));
                         const client_addr = try std.net.Address.parseIp(client_ip, port);
 
                         for (hashes.items, 0..) |chunk, i| {
-                            chunks[i] = .{
+                            maybe_chunks[i] = .{
                                 .chunkName = chunk.object.get("chunkName").?.string,
                                 .chunkSize = chunk.object.get("chunkSize").?.integer,
                             };
@@ -295,7 +407,7 @@ const Client = struct {
                             @intCast(size),
                             hash,
                             client_addr,
-                            chunks,
+                            maybe_chunks,
                         ) catch |err| {
                             log.warn("Failed to register {s}: {s}", .{ filename, @errorName(err) });
                         };
@@ -389,3 +501,258 @@ pub const Epoll = struct {
         return std.posix.epoll_wait(self.fd, &self.events, -1);
     }
 };
+
+const DownloadManager = struct {
+    const Self = @This();
+    const ChunkRequest = struct {
+        hash: []const u8,
+        size: usize,
+        buff: std.ArrayList(u8),
+        peer: std.net.Address,
+    };
+
+    current_request: ?ChunkRequest, // The chunk we're currently downloading
+    pending_chunks: std.ArrayList(ChunkInfo), // Chunks waiting to be downloaded
+    available_peers: std.ArrayList(std.net.Address), // Available peers to download from
+    fileHash: []const u8,
+    alloc: std.mem.Allocator,
+    sock: UDPSocket,
+    timeout: i64,
+
+    pub fn init(alloc: std.mem.Allocator, sock: UDPSocket) !Self {
+        return .{
+            .alloc = alloc,
+            .sock = sock,
+            .timeout = 0,
+            .current_request = null,
+            .fileHash = undefined,
+            .pending_chunks = std.ArrayList(ChunkInfo).init(alloc),
+            .available_peers = std.ArrayList(std.net.Address).init(alloc),
+        };
+    }
+
+    pub fn deinit(self: *Self) void {
+        if (self.current_request) |*request| {
+            self.alloc.free(request.hash);
+            request.buff.deinit();
+        }
+        for (self.pending_chunks.items) |chunk| {
+            self.alloc.free(chunk.chunkName);
+        }
+        self.pending_chunks.deinit();
+        self.available_peers.deinit();
+
+        if (self.fileHash.len != 0) {
+            self.alloc.free(self.fileHash);
+        }
+    }
+
+    pub fn getFile(self: *Self, thisfile: FileRegistry.FileData, cache: *file.ChunkDir) !void {
+        // Clear current state
+        if (self.current_request) |*request| {
+            self.alloc.free(request.hash);
+            request.buff.deinit();
+            self.current_request = null;
+        }
+
+        // Copy chunks and peers
+        self.pending_chunks.clearRetainingCapacity();
+        self.available_peers.clearRetainingCapacity();
+
+        for (thisfile.chunk_hashes.items) |chunk| {
+            try self.pending_chunks.append(.{
+                .chunkName = try self.alloc.dupe(u8, chunk.chunkName),
+                .chunkSize = chunk.chunkSize,
+            });
+        }
+
+        for (thisfile.clientIPs.items) |peer| {
+            try self.available_peers.append(peer);
+        }
+
+        self.fileHash = try self.alloc.dupe(u8, thisfile.fullFileHash);
+
+        // Start downloading
+        try self.startNextChunk(cache);
+    }
+
+    fn startNextChunk(self: *Self, cache: *file.ChunkDir) !void {
+        // Make sure we have chunks and peers
+        if (self.pending_chunks.items.len == 0) {
+            log.info("All chunks downloaded successfully", .{});
+            if (try cache.reassembleFile(self.fileHash)) {
+                log.info("File {s} sucessfully reassembled!", .{self.fileHash});
+            }
+            return;
+        }
+
+        if (self.available_peers.items.len == 0) {
+            log.err("No peers available to download from", .{});
+            return;
+        }
+
+        // Get the next chunk and the first peer
+        const chunk = self.pending_chunks.items[0];
+        const peer = self.available_peers.items[0];
+
+        // Create the request
+        self.current_request = .{
+            .hash = try self.alloc.dupe(u8, chunk.chunkName),
+            .size = @as(usize, @intCast(chunk.chunkSize)),
+            .buff = std.ArrayList(u8).init(self.alloc),
+            .peer = peer,
+        };
+
+        std.debug.print("Created new request\n", .{});
+
+        // Send the request
+        try self.sendGetChunk();
+
+        std.debug.print("Send get chunk request from startNextChunk\n", .{});
+    }
+
+    fn sendGetChunk(self: *Self) !void {
+        if (self.current_request) |request| {
+            var json_request = std.ArrayList(u8).init(self.alloc);
+            defer json_request.deinit();
+
+            try std.json.stringify(.{
+                .requestType = "getChunk",
+                .chunkName = request.hash,
+            }, .{}, json_request.writer());
+
+            self.timeout = std.time.timestamp() + 10; // 10sec timeout
+            try self.sock.sendTo(request.peer, json_request.items);
+            log.info("Requested chunk {s} from {}", .{ request.hash, request.peer });
+        }
+    }
+
+    // handles incoming data. Returns true if its a chunk
+    pub fn handleIncomingChunkData(self: *Self, data: []const u8, peer: std.net.Address, cache: *file.ChunkDir) !bool {
+        // Check if we have an active request
+        const request = if (self.current_request) |*req| req else return false;
+
+        // Only accept data from the peer we requested from
+        if (!std.net.Address.eql(peer, request.peer)) {
+            return false;
+        }
+
+        // Add the data to our buffer
+        try request.buff.appendSlice(data);
+
+        // Check if chunk is complete
+        if (request.buff.items.len >= request.size) {
+            var buf: [64]u8 = undefined;
+            const hash = try sha256(request.buff.items, &buf);
+
+            if (!std.mem.eql(u8, request.hash, hash)) {
+                log.warn("Invalid chunk hash received", .{});
+                // Retry with the next peer
+                try self.switchPeer();
+                return true;
+            }
+
+            // Valid chunk received, save it
+            try cache.saveChunk(request.hash, request.buff.items);
+
+            log.info("Finished save chunk", .{});
+
+            // Clean up this request
+            self.alloc.free(request.hash);
+            request.buff.deinit();
+
+            log.info("Freed request hash and buffer", .{});
+
+            // Remove the first chunk from pending
+            _ = self.pending_chunks.orderedRemove(0);
+
+            log.info("Removed the first chunk from pending", .{});
+
+            // Clear current request
+            self.current_request = null;
+
+            // Start next chunk
+            try self.startNextChunk(cache);
+
+            log.info("Start next chunk", .{});
+
+            return true;
+        } else {
+            log.info("{d} bytes remaining", .{self.current_request.?.size - self.current_request.?.buff.items.len});
+        }
+
+        return true;
+    }
+
+    // Switch to the next available peer
+    fn switchPeer(self: *Self) !void {
+        if (self.available_peers.items.len <= 1) {
+            log.err("No alternative peers available", .{});
+
+            if (self.current_request) |req| {
+                self.alloc.free(req.hash);
+                req.buff.deinit();
+
+                // Clear current request since we cant complete it
+                self.current_request = null;
+                self.pending_chunks.clearRetainingCapacity();
+            }
+            return;
+        }
+
+        // Remove the first peer
+        _ = self.available_peers.orderedRemove(0);
+        log.info("Switching to next peer: {}", .{self.available_peers.items[0]});
+
+        // Update the current request with the new peer
+        if (self.current_request) |*request| {
+            request.peer = self.available_peers.items[0];
+            request.buff.clearRetainingCapacity();
+            try self.sendGetChunk();
+        }
+    }
+
+    // Check for timeouts
+    pub fn checkTimeouts(self: *Self) !void {
+        if (self.current_request) |_| {
+            const now = std.time.timestamp();
+            if (self.current_request != null and self.timeout <= now) {
+                log.warn("Request timed out", .{});
+                try self.switchPeer();
+            }
+        }
+    }
+};
+
+fn hashAddress(addr: std.net.Address) u64 {
+    var hasher = std.hash.Wyhash.init(0);
+
+    switch (addr.any.family) {
+        std.os.AF_INET => {
+            const ip = addr.in;
+            hasher.update(std.mem.asBytes(&ip.sa.addr));
+            hasher.update(std.mem.asBytes(&ip.sa.port));
+        },
+        std.os.AF_INET6 => {
+            const ip = addr.in6;
+            hasher.update(&ip.sa.addr);
+            hasher.update(std.mem.asBytes(&ip.sa.port));
+        },
+        else => unreachable,
+    }
+
+    return hasher.final();
+}
+
+/// Hash data using SHA-256 and write the lowercase hexadecimal result into buf.
+pub fn sha256(data: []const u8, buf: []u8) ![]u8 {
+    var sha = std.crypto.hash.sha2.Sha256.init(.{});
+    sha.update(data);
+    const hash = sha.finalResult();
+
+    return try std.fmt.bufPrint(
+        buf,
+        "{s}",
+        .{std.fmt.fmtSliceHexLower(&hash)},
+    );
+}

@@ -6,6 +6,11 @@ const wyhash = bflib.wyhash;
 
 const log = std.log.scoped(.FileRegistry);
 
+pub const ChunkInfo = struct {
+    chunkName: []const u8,
+    chunkSize: i64,
+};
+
 pub const FileRegistry = struct {
     const Self = @This();
 
@@ -27,11 +32,6 @@ pub const FileRegistry = struct {
             @intFromFloat((@as(f64, @floatFromInt(n_bits)) / expected_items) * std.math.ln2),
         ),
     );
-
-    pub const ChunkInfo = struct {
-        chunkName: []const u8,
-        chunkSize: i64,
-    };
 
     pub const FileData = struct {
         filename: []const u8,
@@ -75,9 +75,6 @@ pub const FileRegistry = struct {
         self.files.deinit(self.alloc);
         self.map.deinit();
     }
-
-    /// Register a new client
-    pub fn registerClient() void {}
 
     /// Regster a new file
     pub fn registerFile(
@@ -184,7 +181,60 @@ pub const FileRegistry = struct {
                 });
             }
 
-            return result.toOwnedSlice();
+            return try result.toOwnedSlice();
+        }
+
+        return null;
+    }
+
+    pub fn getFile(self: *Self, hash: []const u8, alloc: std.mem.Allocator) !FileData {
+        if (!self.filter.contains(hash)) return error.HashNotFound;
+
+        if (self.map.get(hash)) |file_index| {
+            const slice = self.files.slice();
+            const file_data = FileData{
+                .filename = try alloc.dupe(u8, slice.items(.filename)[file_index]),
+                .fullFileHash = try alloc.dupe(u8, slice.items(.fullFileHash)[file_index]),
+                .fileSize = slice.items(.fileSize)[file_index],
+                .clientIPs = blk: {
+                    var client_list = std.ArrayList(std.net.Address).init(alloc);
+                    try client_list.appendSlice(slice.items(.clientIPs)[file_index].items);
+                    break :blk client_list;
+                },
+                .chunk_hashes = blk: {
+                    var chunk_list = std.ArrayList(ChunkInfo).init(alloc);
+                    for (slice.items(.chunk_hashes)[file_index].items) |chunk| {
+                        try chunk_list.append(.{
+                            .chunkName = try alloc.dupe(u8, chunk.chunkName),
+                            .chunkSize = chunk.chunkSize,
+                        });
+                    }
+                    break :blk chunk_list;
+                },
+            };
+            return file_data;
+        }
+
+        // the bloomfilter can make mistakes, so if it isnt in the map err
+        log.warn("bloomfilter falsepos in getFile for hash {s}", .{hash});
+        return error.HashNotFound;
+    }
+
+    pub fn getFileName(self: *Self, hash: []const u8, alloc: std.mem.Allocator) !?[]const u8 {
+        if (!self.filter.contains(hash)) return null;
+
+        if (self.map.get(hash)) |file_index| {
+            return try alloc.dupe(u8, self.files.slice().items(.filename)[file_index]);
+        }
+
+        return null;
+    }
+
+    pub fn getFileSize(self: *Self, hash: []const u8) !?usize {
+        if (!self.filter.contains(hash)) return null;
+
+        if (self.map.get(hash)) |file_index| {
+            return @intCast(self.files.slice().items(.fileSize)[file_index]);
         }
 
         return null;
@@ -289,12 +339,11 @@ pub const FileRegistry = struct {
         for (0..self.files.len) |i| {
             var clients = std.ArrayList(struct {
                 IP: []const u8,
-                Port: []const u8,
+                Port: u16,
             }).init(self.alloc);
 
             for (slice.items(.clientIPs)[i].items) |client| {
                 var ip_buf: [64]u8 = undefined;
-                var port_buf: [16]u8 = undefined;
 
                 const bytes = @as(*const [4]u8, @ptrCast(&client.in.sa.addr));
                 const ip = try std.fmt.bufPrint(&ip_buf, "{}.{}.{}.{}", .{
@@ -304,17 +353,14 @@ pub const FileRegistry = struct {
                     bytes[3],
                 });
 
-                const port = try std.fmt.bufPrint(&port_buf, "{d}", .{client.getPort()});
-
                 try clients.append(.{
                     .IP = try self.alloc.dupe(u8, ip),
-                    .Port = try self.alloc.dupe(u8, port),
+                    .Port = client.getPort(),
                 });
             }
             defer {
                 for (clients.items) |item| {
                     self.alloc.free(item.IP);
-                    self.alloc.free(item.Port);
                 }
                 clients.deinit();
             }

@@ -3,6 +3,7 @@ const clap = @import("clap");
 const UDPSocket = @import("sock.zig").UDPSocket;
 const build_info = @import("build_info");
 const FileRegistry = @import("file_registry.zig").FileRegistry;
+const ChunkInfo = @import("file_registry.zig").ChunkInfo;
 
 comptime {
     _ = @import("bloom_filter.zig");
@@ -108,7 +109,7 @@ pub fn main() !void {
 
                 const json_chunks = (json_values.value.object.get("chunk_hashes") orelse continue).array;
 
-                var chunks = try gpa.alloc(FileRegistry.ChunkInfo, json_chunks.items.len);
+                var chunks = try gpa.alloc(ChunkInfo, json_chunks.items.len);
 
                 for (json_chunks.items, 0..) |chunk, i| {
                     chunks[i] = .{

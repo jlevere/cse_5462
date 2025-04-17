@@ -1,15 +1,12 @@
 const std = @import("std");
+const FileRegistry = @import("file_registry.zig").FileRegistry;
+const ChunkInfo = @import("file_registry.zig").ChunkInfo;
 
 const log = std.log.scoped(.file_chunking);
 
 pub const File = struct {
     const Self = @This();
     const Allocator = std.mem.Allocator;
-
-    pub const ChunkInfo = struct {
-        chunkName: []const u8,
-        chunkSize: i64,
-    };
 
     alloc: Allocator,
     filename: []const u8,
@@ -317,7 +314,7 @@ pub const ChunkDir = struct {
         try thisfile.seekTo(0);
         var filereader = thisfile.reader();
 
-        var chunk_hashes = std.ArrayList(File.ChunkInfo).init(self.alloc);
+        var chunk_hashes = std.ArrayList(ChunkInfo).init(self.alloc);
         defer {
             for (chunk_hashes.items) |chunk| self.alloc.free(chunk.chunkName);
             chunk_hashes.deinit();
@@ -386,6 +383,178 @@ pub const ChunkDir = struct {
             try self.chunkFile(entry.name);
         }
         log.debug("finished building cache", .{});
+    }
+
+    pub fn saveChunk(self: *Self, chunk_name: []const u8, data: []const u8) !void {
+        var cache = try self.dir.openDir(self.cache_name, .{});
+        defer cache.close();
+
+        var chunk_file = try cache.createFile(chunk_name, .{});
+        defer chunk_file.close();
+        try chunk_file.writeAll(data);
+
+        log.info("Saved chunk {s} ({d} bytes)", .{ chunk_name, data.len });
+    }
+
+    pub fn hasChunk(self: *Self, chunk_name: []const u8) !bool {
+        var cache = try self.dir.openDir(self.cache_name, .{});
+        defer cache.close();
+
+        const stat = cache.statFile(chunk_name) catch |err| switch (err) {
+            error.FileNotFound => return false,
+            else => return err,
+        };
+        return stat.kind == .file;
+    }
+
+    /// Writes a manifest file of type File to the cache directory based on FileData.
+    pub fn writeManifest(self: *Self, file_data: FileRegistry.FileData) !void {
+        var file_obj = try File.init(
+            self.alloc,
+            file_data.filename,
+            @as(usize, @intCast(file_data.fileSize)),
+            file_data.chunk_hashes.items,
+            file_data.fullFileHash,
+        );
+        defer file_obj.deinit();
+
+        const manifest_name = try std.fmt.allocPrint(
+            self.alloc,
+            "{s}.json",
+            .{file_data.fullFileHash},
+        );
+        defer self.alloc.free(manifest_name);
+
+        var cache_dir = try self.dir.openDir(self.cache_name, .{});
+        defer cache_dir.close();
+
+        var manifest_file = try cache_dir.createFile(manifest_name, .{});
+        defer manifest_file.close();
+
+        try file_obj.serialize(manifest_file.writer(), null);
+        log.debug("Wrote manifest {s} for file {s}", .{ manifest_name, file_data.filename });
+    }
+
+    pub fn loadManifest(self: *Self, file_hash: []const u8) !?File {
+        var cache = try self.dir.openDir(self.cache_name, .{});
+        defer cache.close();
+
+        const manifest_name = try std.fmt.allocPrint(self.alloc, "{s}.json", .{file_hash});
+        defer self.alloc.free(manifest_name);
+
+        var manifest_file = cache.openFile(manifest_name, .{}) catch |err| switch (err) {
+            error.FileNotFound => return null,
+            else => return err,
+        };
+        defer manifest_file.close();
+
+        const content = try manifest_file.readToEndAlloc(self.alloc, std.math.maxInt(usize));
+        defer self.alloc.free(content);
+
+        return try File.FromJson.parse(self.alloc, content);
+    }
+
+    pub fn hasAllChunks(self: *Self, file_obj: *const File) !bool {
+        var cache = try self.dir.openDir(self.cache_name, .{});
+        defer cache.close();
+
+        for (file_obj.chunk_hashes.items) |chunk| {
+            const stat = cache.statFile(chunk.chunkName) catch |err| switch (err) {
+                error.FileNotFound => return false,
+                else => return err,
+            };
+            if (stat.kind != .file or stat.size != @as(u64, @intCast(chunk.chunkSize))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    pub fn reassembleFile(self: *Self, file_hash: []const u8) !bool {
+        var file_obj = (try self.loadManifest(file_hash)) orelse {
+            log.err("No manifest found for file {s}", .{file_hash});
+            return false;
+        };
+        defer file_obj.deinit();
+
+        var cache = try self.dir.openDir(self.cache_name, .{});
+        defer cache.close();
+
+        // Verify all chunks
+        if (!try self.hasAllChunks(&file_obj)) {
+            log.debug("Not all chunks present for file {s}", .{file_hash});
+            return false;
+        }
+
+        // Open output file in parent directory
+        var output_file = try self.dir.createFile(file_obj.filename, .{});
+        defer output_file.close();
+
+        // Concatenate chunks
+        for (file_obj.chunk_hashes.items) |chunk| {
+            var chunk_file = try cache.openFile(chunk.chunkName, .{});
+            defer chunk_file.close();
+
+            var buffer: [CHUNK_SIZE]u8 = undefined;
+            var total_read: usize = 0;
+            while (true) {
+                const n = try chunk_file.read(&buffer);
+                if (n == 0) break;
+                try output_file.writeAll(buffer[0..n]);
+                total_read += n;
+            }
+
+            if (total_read != @as(usize, @intCast(chunk.chunkSize))) {
+                log.err("Chunk {s} size mismatch: expected {d}, read {d}", .{ chunk.chunkName, chunk.chunkSize, total_read });
+                return error.ChunkSizeMismatch;
+            }
+        }
+
+        // Verify file size
+        const file_stat = try output_file.stat();
+        if (file_stat.size != file_obj.fileSize) {
+            log.err("Reassembled file {s} size mismatch: expected {d}, got {d}", .{ file_obj.filename, file_obj.fileSize, file_stat.size });
+            return error.FileSizeMismatch;
+        }
+
+        log.info("Reassembled file {s} ({s})", .{ file_obj.filename, file_hash });
+        return true;
+    }
+
+    pub fn fetchChunk(self: *Self, chunk_name: []const u8, alloc: Allocator) ![]u8 {
+        var cache = try self.dir.openDir(self.cache_name, .{});
+        defer cache.close();
+
+        var chunk_file = cache.openFile(chunk_name, .{}) catch |err| {
+            if (err == error.FileNotFound) {
+                log.err("Chunk {s} not found in cache", .{chunk_name});
+                return error.ChunkNotFound;
+            }
+            return err;
+        };
+        defer chunk_file.close();
+
+        const stat = try chunk_file.stat();
+        if (stat.kind != .file) {
+            log.err("Chunk {s} is not a file", .{chunk_name});
+            return error.InvalidChunk;
+        }
+
+        const data = try alloc.alloc(u8, stat.size);
+        errdefer alloc.free(data);
+
+        const bytes_read = try chunk_file.readAll(data);
+        if (bytes_read != stat.size) {
+            log.err("Incomplete read for chunk {s}: expected {d}, got {d}", .{
+                chunk_name,
+                stat.size,
+                bytes_read,
+            });
+            return error.IncompleteRead;
+        }
+
+        log.debug("Fetched chunk {s} ({d} bytes)", .{ chunk_name, data.len });
+        return data;
     }
 
     /// Iterator over manifest files in a given directory

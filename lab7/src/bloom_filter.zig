@@ -89,6 +89,34 @@ pub fn BloomFilter(
     };
 }
 
+/// Helper function to create a BloomFilter with optimal parameters based on
+/// the expected number of items and desired false positive rate.
+/// Uses WyHash as the hash function.
+///
+/// expected_items: Number of items expected to be stored in the filter
+/// false_pos_rate: Desired false positive rate (between 0 and 1)
+///
+/// Returns a configured BloomFilter or an error if parameters are invalid
+pub fn WyBloomFilter(expected_items: usize, false_pos_rate: f64) !type {
+    if (expected_items == 0) {
+        return error.InvalidItemCount;
+    }
+    if (false_pos_rate <= 0 or false_pos_rate >= 1) {
+        return error.InvalidFalsePositiveRate;
+    }
+
+    // Calculate optimal size (in bits)
+    const bits_needed = @as(usize, @intFromFloat(-(@as(f64, @floatFromInt(expected_items)) * @log(false_pos_rate) / (std.math.ln2 * std.math.ln2))));
+
+    // Round up to next power of two
+    const n_bits = try std.math.ceilPowerOfTwo(usize, bits_needed);
+
+    // Calculate optimal number of hash functions
+    const K = @max(1, @as(usize, @intFromFloat((@as(f64, @floatFromInt(n_bits)) / expected_items) * std.math.ln2)));
+
+    return BloomFilter(n_bits, K, wyhash);
+}
+
 /// Very fast hash for 64bit arch with small keys
 /// https://github.com/wangyi-fudan/wyhash
 pub fn wyhash(ki: usize, input: []const u8) u64 {
